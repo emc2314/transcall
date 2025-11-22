@@ -514,31 +514,22 @@ class RequestMapper:
             
             # Handle Edits (Visual Prompting)
             if req.input_image_bytes_list:
-                # Check for Mask - Fail Fast
                 if req.mask_image_bytes:
                      raise HTTPException(
                         status_code=400, 
                         detail="The 'mask' parameter is not supported for Gemini models via this endpoint."
                     )
-                # Check for multiple images - Fail Fast 
-                if len(req.input_image_bytes_list) > 1:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Multiple input images for editing are not supported for Gemini models via this endpoint."
-                    )
 
-                # Add Base64 Image
-                b64_img = base64.b64encode(req.input_image_bytes_list[0]).decode("utf-8")
-                
                 mime_list = req.input_image_mime_list or []
-                mime_type = mime_list[0] if mime_list else "image/png"
-                
-                parts.append({
-                    "inlineData": {
-                        "mimeType": mime_type,
-                        "data": b64_img
-                    }
-                })
+                for idx, img_bytes in enumerate(req.input_image_bytes_list):
+                    b64_img = base64.b64encode(img_bytes).decode("utf-8")
+                    mime_type = mime_list[idx] if idx < len(mime_list) else "image/png"
+                    parts.append({
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": b64_img
+                        }
+                    })
             contents = [{"parts": parts}]
 
         # 2. Construct Payload
