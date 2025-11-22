@@ -1,0 +1,11 @@
+services:
+  transcall:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.json:/app/config.json
+    environment:
+      - LOG_LEVEL=DEBUG
+      - RAW_LOG_BINARY_MODE=base64
+    restart: unless-stopped
