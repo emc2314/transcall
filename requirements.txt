@@ -4,3 +4,4 @@ httpx
 python-multipart
 pydantic
 google-auth
+requests

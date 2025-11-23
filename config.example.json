@@ -7,13 +7,15 @@
       "api_version": "2025-04-01-preview",
       "api_key_env": "OPENAI_API_KEY"
     },
-    "gemini-3-pro-image-preview": {
+    "gemini-3-pro-image-google": {
       "provider": "gemini",
+      "model": "gemini-3-pro-image-preview",
       "base_url": "https://generativelanguage.googleapis.com/v1beta",
       "api_key_env": "GEMINI_API_KEY"
     },
-    "gemini-1.5-pro-vertex": {
+    "gemini-3-pro-image-vertex": {
       "provider": "vertexai",
+      "model": "gemini-3-pro-image-preview",
       "project_id": "your-google-cloud-project-id",
       "location": "us-central1",
       "credentials_env": "VERTEXAI_CREDENTIALS"
