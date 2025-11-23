@@ -41,6 +41,7 @@ class RequestMapper:
         "toolConfig",
         "systemInstruction",
         "cachedContent",
+        "responseModalities",
     }
     _OPENAI_ALLOWED_SIZES: Set[str] = {"1024x1024", "1536x1024", "1024x1536"}
     _OPENAI_DEFAULT_SIZE: str = "1024x1024"
@@ -181,6 +182,7 @@ class RequestMapper:
         context = f"Gemini Content[{content_idx}] Part[{part_idx}]"
         known_part_fields = {
             "inlineData",
+            "inline_data",
             "text",
             "thought",
             "thoughtSignature",
@@ -195,14 +197,16 @@ class RequestMapper:
         RequestMapper._warn_unknown_fields(part, known_part_fields, context)
 
         inline_data_obj: Optional[GeminiInlineData] = None
+
         # Check both camelCase (API standard) and snake_case (Python SDK typical)
         inline_data = part.get("inlineData") or part.get("inline_data")
 
         if inline_data:
-            # Warn if we found snake_case but known_fields only had camelCase (optional, but good for debugging)
-            # RequestMapper._warn_unknown_fields(inline_data, {"mimeType", "data", "mime_type"}, f"{context} inlineData")
-
+            # RequestMapper._warn_unknown_fields(
+            #     inline_data, {"mimeType", "data", "mime_type"}, f"{context} inlineData"
+            # )
             data_str = inline_data.get("data", "") or ""
+
             # Check both mimeType and mime_type
             mime_type = (
                 inline_data.get("mimeType")
@@ -479,6 +483,7 @@ class RequestMapper:
             "responseSchema",
             "responseLogprobs",
             "logprobs",
+            "responseModalities",
         }
 
         # Keep imageConfig in generation_config. Only strip candidateCount as it maps to 'n'.
@@ -987,8 +992,10 @@ class ResponseMapper:
 
         for img in unified.images:
             idx = (
-                img.index if img.index is not None else len(seen_indices)
-            )  # Fallback if no index
+                img.index
+                if img.index is not None
+                else len(seen_indices)  # Fallback if no index
+            )
             if idx not in grouped_items:
                 seen_indices.append(idx)
 

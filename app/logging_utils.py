@@ -20,6 +20,30 @@ def _truncate(text: str) -> str:
     return text
 
 
+def truncate_json(value: Any, limit: Optional[int] = None) -> Any:
+    """
+    Recursively truncate long string values within a JSON-serializable object
+    while keeping the overall structure intact.
+    """
+    max_len = limit if limit is not None else _raw_log_char_limit()
+
+    if isinstance(value, dict):
+        return {k: truncate_json(v, max_len) for k, v in value.items()}
+
+    if isinstance(value, list):
+        return [truncate_json(item, max_len) for item in value]
+
+    if isinstance(value, tuple):
+        return [truncate_json(item, max_len) for item in value]
+
+    if isinstance(value, str):
+        if len(value) > max_len:
+            return f"{value[:max_len]}... (truncated, {len(value)} chars total)"
+        return value
+
+    return value
+
+
 def _serialize_headers(headers: Optional[Mapping[str, Any]]) -> str:
     if headers is None:
         return ""
@@ -59,17 +83,41 @@ def format_binary_content(data: bytes) -> str:
 def _serialize_body(body: Any, treat_as_binary: bool = False) -> str:
     if body is None:
         return ""
+
+    def _dump_truncated_json(obj: Any) -> Optional[str]:
+        try:
+            truncated = truncate_json(obj)
+            return json.dumps(truncated, ensure_ascii=False)
+        except Exception:
+            return None
+
     if isinstance(body, bytes):
+        decoded_text: Optional[str] = None
+        parsed_json: Optional[Any] = None
+        try:
+            decoded_text = body.decode("utf-8")
+            parsed_json = json.loads(decoded_text)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            parsed_json = None
+
+        if parsed_json is not None:
+            serialized = _dump_truncated_json(parsed_json)
+            if serialized is not None:
+                return serialized
+
         if treat_as_binary:
             return format_binary_content(body)
-        text = body.decode("utf-8", errors="replace")
-        return _truncate(text)
+
+        if decoded_text is None:
+            decoded_text = body.decode("utf-8", errors="replace")
+        return _truncate(decoded_text)
+
     if isinstance(body, (dict, list)):
-        try:
-            text = json.dumps(body, ensure_ascii=False)
-        except Exception:
-            text = str(body)
-        return _truncate(text)
+        serialized = _dump_truncated_json(body)
+        if serialized is not None:
+            return serialized
+        return _truncate(str(body))
+
     return _truncate(str(body))
 
 

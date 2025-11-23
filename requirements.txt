@@ -5,3 +5,6 @@ python-multipart
 pydantic
 google-auth
 requests
+openai
+google-genai
+pillow
