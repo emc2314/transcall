@@ -418,7 +418,7 @@ class RequestMapper:
             prompt=prompt,
             n=n,
             size=None, # No WxH size yet, preserved in generation_config
-            response_format="b64_json",
+            response_format=None, # Do not invent response_format; let lowering decide defaults or omission
             
             # Gemini Specifics
             generation_config=other_gen_config if other_gen_config else None,
@@ -475,6 +475,7 @@ class RequestMapper:
         for field, value in optional_fields.items():
             if value is None:
                 continue
+            
             if RequestMapper._should_include_openai_field(req, field):
                 payload[field] = value
 
@@ -561,6 +562,9 @@ class RequestMapper:
             "contents": contents
         }
 
+        # Determine if we need to inject default multimodal settings (for OpenAI -> Gemini case)
+        is_openai_source = (req.gemini_contents is None)
+
         if RequestMapper._should_include_gemini_field(req, "generationConfig"):
             generation_config_payload: Dict[str, Any] = {
                 "candidateCount": req.n
@@ -571,8 +575,14 @@ class RequestMapper:
                     "aspectRatio": aspect_ratio,
                     "imageSize": image_size
                 }
+            
+            if is_openai_source:
+                # Force TEXT + IMAGE for OpenAI requests to allow image generation
+                generation_config_payload["response_modalities"] = ["TEXT", "IMAGE"]
+
             if req.generation_config:
                 generation_config_payload.update(req.generation_config)
+            
             payload["generationConfig"] = generation_config_payload
 
         if req.safety_settings:
@@ -717,7 +727,7 @@ class ResponseMapper:
 
         images: List[UnifiedImageResponseItem] = []
         candidates = resp.get("candidates", [])
-        for cand in candidates:
+        for cand_idx, cand in enumerate(candidates):
             known_cand_fields = {"content", "finishReason", "safetyRatings", "citationMetadata", 
                                  "tokenCount", "groundingAttributions", "groundingMetadata", 
                                  "avgLogprobs", "logprobsResult", "index", "finishMessage"}
@@ -730,7 +740,11 @@ class ResponseMapper:
             citation_metadata = cand.get("citationMetadata")
             grounding_metadata = cand.get("groundingMetadata")
             token_count = cand.get("tokenCount")
+            # Use explicit index from API if present, otherwise use loop index
             index = cand.get("index")
+            if index is None:
+                index = cand_idx
+            
             finish_message = cand.get("finishMessage")
 
             parts = cand.get("content", {}).get("parts", [])
@@ -951,47 +965,50 @@ class ResponseMapper:
                 
                 candidates_map[idx] = candidate
 
-            # Construct Part
+            # Construct Part (Merge all properties into a single Part object)
+            part: Dict[str, Any] = {}
+            
             # Text
             if img.revised_prompt:
-                parts_map[idx].append({"text": img.revised_prompt})
+                part["text"] = img.revised_prompt
 
-            # Thought (can be Any, but typically matches Gemini part structure)
+            # Thought
             if img.thought is not None:
-                parts_map[idx].append({"thought": img.thought})
+                part["thought"] = img.thought
             
             # Thought Signature
             if img.thought_signature:
-                parts_map[idx].append({"thoughtSignature": img.thought_signature})
+                part["thoughtSignature"] = img.thought_signature
             
             # Part Metadata
             if img.part_metadata:
-                parts_map[idx].append({"partMetadata": img.part_metadata})
+                part["partMetadata"] = img.part_metadata
             
             # Video Metadata
             if img.video_metadata:
-                parts_map[idx].append({"videoMetadata": img.video_metadata})
+                part["videoMetadata"] = img.video_metadata
                 
             # Advanced Fields
             if img.function_call:
-                parts_map[idx].append({"functionCall": img.function_call})
+                part["functionCall"] = img.function_call
             if img.function_response:
-                parts_map[idx].append({"functionResponse": img.function_response})
+                part["functionResponse"] = img.function_response
             if img.file_data:
-                parts_map[idx].append({"fileData": img.file_data})
+                part["fileData"] = img.file_data
             if img.executable_code:
-                parts_map[idx].append({"executableCode": img.executable_code})
+                part["executableCode"] = img.executable_code
             if img.code_execution_result:
-                parts_map[idx].append({"codeExecutionResult": img.code_execution_result})
+                part["codeExecutionResult"] = img.code_execution_result
 
             # Image
             if img.b64_json:
-                parts_map[idx].append({
-                    "inlineData": {
-                        "mimeType": img.mime_type,
-                        "data": img.b64_json
-                    }
-                })
+                part["inlineData"] = {
+                    "mimeType": img.mime_type,
+                    "data": img.b64_json
+                }
+            
+            if part:
+                parts_map[idx].append(part)
         
         # Assemble final list
         final_candidates = []

@@ -105,7 +105,7 @@ def run_google_genai_sdk_tests(target_model: str):
             model=target_model,
             contents="A cyberpunk cat wearing sunglasses",
             config=types.GenerateContentConfig(
-                response_mime_type="application/json"
+                response_modalities=[types.Modality.TEXT, types.Modality.IMAGE]
             )
         )
 
@@ -119,13 +119,19 @@ def run_google_genai_sdk_tests(target_model: str):
              return
 
         # The unified mapper puts the b64 string into inline_data
-        part = cand.content.parts[0]
-
-        if part.inline_data and part.inline_data.data:
+        # Iterate through parts to find the image, as thinking models return multiple parts
+        image_part = None
+        if cand.content and cand.content.parts:
+            for part in cand.content.parts:
+                if part.inline_data:
+                    image_part = part
+                    break
+        
+        if image_part and image_part.inline_data and image_part.inline_data.data:
             # SDK automatically decodes base64 inline_data.data to bytes
-            generated_img = verify_and_return_image(part.inline_data.data, "Generation")
+            generated_img = verify_and_return_image(image_part.inline_data.data, "Generation")
         else:
-            print("  [FAIL] No inline image data found.")
+            print("  [FAIL] No inline image data found in any part.")
             return
 
     except Exception as e:
@@ -153,9 +159,14 @@ def run_google_genai_sdk_tests(target_model: str):
              print("  [FAIL] Candidate has no content or parts.")
              return
 
-        part = cand.content.parts[0]
-        if part.inline_data and part.inline_data.data:
-            verify_and_return_image(part.inline_data.data, "Edit")
+        image_part = None
+        for part in cand.content.parts:
+            if part.inline_data:
+                image_part = part
+                break
+
+        if image_part and image_part.inline_data and image_part.inline_data.data:
+            verify_and_return_image(image_part.inline_data.data, "Edit")
         else:
             print("  [FAIL] No inline image data found in edit response.")
 
