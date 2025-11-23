@@ -9,7 +9,7 @@ from google.genai import types
 # Configuration
 LOCAL_API_URL = "http://localhost:8000"
 OPENAI_BASE_URL = f"{LOCAL_API_URL}/v1"
-GEMINI_BASE_URL = f"{LOCAL_API_URL}" 
+GEMINI_BASE_URL = f"{LOCAL_API_URL}"
 
 # Models to test
 MODEL_OPENAI = "gpt-image-1"
@@ -40,13 +40,12 @@ def run_openai_sdk_tests(target_model: str):
             model=target_model,
             prompt="A colorful hot air balloon flying over a mountain range",
             size="1024x1024",
-            response_format="b64_json",
             n=1
         )
         if not resp.data:
             print("  [FAIL] No data returned from OpenAI generate.")
             return
-            
+
         b64_str = resp.data[0].b64_json
         if not b64_str:
              print("  [FAIL] No b64_json in response.")
@@ -71,7 +70,6 @@ def run_openai_sdk_tests(target_model: str):
             image=img_byte_arr,
             prompt="Make the image black and white, pencil sketch style",
             size="1024x1024",
-            response_format="b64_json",
             n=1
         )
         if not resp.data:
@@ -90,13 +88,13 @@ def run_openai_sdk_tests(target_model: str):
 
 def run_google_genai_sdk_tests(target_model: str):
     print(f"\n>>> Testing Google GenAI SDK with model: {target_model}")
-    
+
     client = genai.Client(
         vertexai=True,
         api_key="dummy-key",
         http_options={
             "base_url": GEMINI_BASE_URL,
-            "headers": {"Authorization": "Bearer test_token"} 
+            "headers": {"Authorization": "Bearer test_token"}
         }
     )
 
@@ -110,7 +108,7 @@ def run_google_genai_sdk_tests(target_model: str):
                 response_mime_type="application/json"
             )
         )
-        
+
         if not response.candidates:
              print("  [FAIL] No candidates returned.")
              return
@@ -122,7 +120,7 @@ def run_google_genai_sdk_tests(target_model: str):
 
         # The unified mapper puts the b64 string into inline_data
         part = cand.content.parts[0]
-        
+
         if part.inline_data and part.inline_data.data:
             # SDK automatically decodes base64 inline_data.data to bytes
             generated_img = verify_and_return_image(part.inline_data.data, "Generation")
@@ -140,16 +138,16 @@ def run_google_genai_sdk_tests(target_model: str):
         # For visual prompting, we pass the PIL Image directly
         # Casting list contents for MyPy satisfaction (though runtime is fine)
         edit_contents = [generated_img, "Make this image black and white, high contrast"]
-        
+
         response = client.models.generate_content(
             model=target_model,
             contents=edit_contents  # type: ignore
         )
-        
+
         if not response.candidates:
              print("  [FAIL] No candidates returned for edit.")
              return
-        
+
         cand = response.candidates[0]
         if not cand.content or not cand.content.parts:
              print("  [FAIL] Candidate has no content or parts.")
@@ -167,17 +165,17 @@ def run_google_genai_sdk_tests(target_model: str):
 
 if __name__ == "__main__":
     print("=== Starting Transcall Service Tests (8 Total) ===")
-    
+
     # 1. OpenAI SDK -> OpenAI Model
     run_openai_sdk_tests(MODEL_OPENAI)
-    
+
     # 2. OpenAI SDK -> Gemini Model (Cross-Provider)
     run_openai_sdk_tests(MODEL_GEMINI)
-    
+
     # 3. Google GenAI SDK -> OpenAI Model (Cross-Provider)
     run_google_genai_sdk_tests(MODEL_OPENAI)
-    
+
     # 4. Google GenAI SDK -> Gemini Model
     run_google_genai_sdk_tests(MODEL_GEMINI)
-    
+
     print("\n=== All Tests Completed ===")

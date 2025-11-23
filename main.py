@@ -220,13 +220,13 @@ async def openai_edits(
     image_field_names: List[str] = []
     for img_file, field_name in image_entries:
         content = await img_file.read()
-        image_data_list.append((content, img_file.content_type or "image/png"))
+        image_data_list.append((content, img_file.content_type or "application/octet-stream"))
         image_field_names.append(field_name)
 
     mask_data: Optional[Tuple[bytes, str]] = None
     if mask:
         mask_content = await mask.read()
-        mask_data = (mask_content, mask.content_type or "image/png")
+        mask_data = (mask_content, mask.content_type or "application/octet-stream")
 
     # Construct Params Dict for Mapper (includes all OpenAI-specific parameters)
     params: Dict[str, Any] = {
@@ -267,7 +267,14 @@ async def openai_edits(
 
 
 @app.post("/v1beta/models/{model_name}:generateContent")
-async def gemini_generate_content(model_name: str, request: Request):
+@app.post("/v1beta1/models/{model_name}:generateContent")
+@app.post("/v1/models/{model_name}:generateContent")
+# Support Vertex AI style paths (simplified for proxying, ignoring project/location/publisher parts)
+@app.post("/v1beta1/publishers/google/models/{model_name}:generateContent")
+@app.post("/v1/publishers/google/models/{model_name}:generateContent")
+@app.post("/v1beta1/projects/{project}/locations/{location}/publishers/google/models/{model_name}:generateContent")
+@app.post("/v1/projects/{project}/locations/{location}/publishers/google/models/{model_name}:generateContent")
+async def gemini_generate_content(model_name: str, request: Request, project: Optional[str] = None, location: Optional[str] = None):
     try:
         body = await request.json()
     except Exception:

@@ -12,6 +12,7 @@ from app.schemas import (
     GeminiContentPart,
     GeminiInlineData,
 )
+from app.utils import detect_content_type
 
 logger = logging.getLogger("Mappers")
 
@@ -192,6 +193,13 @@ class RequestMapper:
                     data_bytes = base64.b64decode(data_str)
                 except Exception as exc:
                     logger.warning(f"[{context}] Failed to decode inlineData: {exc}")
+            
+            # Auto-detect correct mime type if generic or missing
+            if not mime_type or mime_type == "application/octet-stream":
+                detected = detect_content_type(data_bytes)
+                if detected:
+                    mime_type = detected
+
             inline_data_obj = GeminiInlineData(mime_type=mime_type, data=data_bytes)
 
         return GeminiContentPart(
@@ -354,10 +362,21 @@ class RequestMapper:
 
             # Image data for edits
             input_image_bytes_list=[img[0] for img in image_data_list],
-            input_image_mime_list=[img[1] for img in image_data_list],
+            input_image_mime_list=[
+                (
+                    detect_content_type(img[0]) or img[1] 
+                    if (not img[1] or img[1] == "application/octet-stream") 
+                    else img[1]
+                ) 
+                for img in image_data_list
+            ],
             input_image_field_names=image_field_names,
             mask_image_bytes=mask_data[0] if mask_data else None,
-            mask_image_mime=mask_data[1] if mask_data else None,
+            mask_image_mime=(
+                detect_content_type(mask_data[0]) or mask_data[1]
+                if mask_data and (not mask_data[1] or mask_data[1] == "application/octet-stream")
+                else (mask_data[1] if mask_data else None)
+            ),
             openai_payload_fields=provided_fields
         )
 

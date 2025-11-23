@@ -31,7 +31,11 @@ def _serialize_headers(headers: Optional[Mapping[str, Any]]) -> str:
         for k, v in headers.items():
             key_lower = str(k).lower()
             if key_lower in sensitive_keys:
-                header_dict[k] = "***REDACTED***"
+                val_str = str(v)
+                if len(val_str) > 4:
+                    header_dict[k] = f"{val_str[:2]}***{val_str[-2:]}"
+                else:
+                    header_dict[k] = "***"
             else:
                 header_dict[k] = str(v)
     except Exception:

@@ -52,10 +52,10 @@ class ImageGenerationService:
             headers = {"Authorization": f"Bearer {api_key}"}
             images_base = f"{url_base}/images"
             params = None
-        
+
         # Determine upstream model name (allows aliasing in config)
         upstream_model = config.get("model") or req.target_model
-        
+
         # Determine endpoint based on content (presence of input images)
         timeout_seconds = config.get("timeout_seconds", 120)
         timeout = httpx.Timeout(timeout_seconds)
@@ -63,7 +63,7 @@ class ImageGenerationService:
         if req.input_image_bytes_list:
             # Edits Endpoint
             url = f"{images_base}/edits"
-            
+
             # Construct Multipart for ALL images and optional mask
             files_list_for_httpx = []
             field_names = req.input_image_field_names or []
@@ -88,7 +88,7 @@ class ImageGenerationService:
                     "size_bytes": len(req.mask_image_bytes),
                     "content": format_binary_content(req.mask_image_bytes)
                 })
-            
+
             # Data params (convert to string for multipart form data)
             payload = RequestMapper.unified_to_openai_payload(req)
             # Override model with the configured upstream name
@@ -105,7 +105,7 @@ class ImageGenerationService:
                     "files": files_log
                 }
             )
-            
+
             logger.info(f"Calling OpenAI Edits: {url}")
             timeout = httpx.Timeout(config.get("timeout_seconds", 120))
             try:
@@ -138,7 +138,7 @@ class ImageGenerationService:
                     "json": payload
                 }
             )
-            
+
             logger.info(f"Calling OpenAI Generations: {url}")
             timeout = httpx.Timeout(config.get("timeout_seconds", 120))
             try:
@@ -171,7 +171,7 @@ class ImageGenerationService:
     async def _call_gemini(req: UnifiedImageRequest, config: Dict[str, Any]) -> UnifiedImageResponse:
         # Allow aliasing via config
         upstream_model = config.get("model") or req.target_model
-        
+
         url = f"{config['base_url']}/models/{upstream_model}:generateContent"
         params_qs = {"key": config['api_key']}
         headers = {"Content-Type": "application/json"}
@@ -235,15 +235,15 @@ class ImageGenerationService:
         api_endpoint = config.get("api_endpoint")
         if not api_endpoint:
             api_endpoint = f"aiplatform.googleapis.com"
-            
+
         # Use target_model from request, but allow override via config (e.g. "gemini-pro-vision")
         upstream_model = config.get("model") or req.target_model
-        
+
         # The user example used :generateContent, so we hardcode that for now as this service is for generation.
         method = "generateContent"
-        
+
         url = f"https://{api_endpoint}/v1/projects/{project_id}/locations/{location}/publishers/google/models/{upstream_model}:{method}"
-        
+
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {access_token}"
