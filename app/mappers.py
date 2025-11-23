@@ -506,10 +506,12 @@ class RequestMapper:
                 content_payload: Dict[str, Any] = {"parts": parts_payload}
                 if content.role:
                     content_payload["role"] = content.role
+                else:
+                    content_payload["role"] = "user"
                 contents.append(content_payload)
 
             if not contents:
-                contents = [{"parts": [{"text": req.prompt}]}]
+                contents = [{"role": "user", "parts": [{"text": req.prompt}]}]
 
         else:
             # Fallback to reconstructing from prompt/images (e.g. from OpenAI request)
@@ -533,7 +535,7 @@ class RequestMapper:
                             "data": b64_img
                         }
                     })
-            contents = [{"parts": parts}]
+            contents = [{"role": "user", "parts": parts}]
 
         # 2. Construct Payload
         payload: Dict[str, Any] = {
@@ -808,20 +810,51 @@ class ResponseMapper:
     def unified_to_openai_format(unified: UnifiedImageResponse) -> Dict[str, Any]:
         ResponseMapper._warn_openai_response_loss(unified)
 
-        data_items: List[Dict[str, Any]] = []
+        # Group Unified Items by Candidate Index to form OpenAI Items
+        # This effectively merges multiple parts (text + image) from one Gemini candidate 
+        # into a single OpenAI object (revised_prompt + b64_json).
+        grouped_items: Dict[int, Dict[str, Any]] = defaultdict(dict)
+        first_valid_mime = None
+        
+        # Track indices to preserve order or detect missing ones
+        seen_indices: List[int] = []
+
         for img in unified.images:
-            item: Dict[str, Any] = {}
+            idx = img.index if img.index is not None else len(seen_indices) # Fallback if no index
+            if idx not in grouped_items:
+                seen_indices.append(idx)
+            
+            item = grouped_items[idx]
+
+            # Merge fields from this part into the item dict
             if img.b64_json:
                 item["b64_json"] = img.b64_json
+                # Capture mime from the image part
+                if not first_valid_mime and img.mime_type:
+                    first_valid_mime = img.mime_type
+
             if img.url:
                 item["url"] = img.url
+
             if img.revised_prompt:
-                item["revised_prompt"] = img.revised_prompt
+                 # If multiple text parts exist, we append/join them
+                 existing_prompt = item.get("revised_prompt", "")
+                 if existing_prompt:
+                     item["revised_prompt"] = existing_prompt + "\n" + img.revised_prompt
+                 else:
+                     item["revised_prompt"] = img.revised_prompt
             
-            # Re-attach extra info that might have come from OpenAI original response
+            # Re-attach extra info (last one wins or merge?) -> simple update for now
             if img.extra_info:
                 item.update(img.extra_info)
-                
+        
+        # Convert grouped map back to list
+        data_items: List[Dict[str, Any]] = []
+        for idx in seen_indices:
+            item = grouped_items[idx]
+            # Filter out items that don't have actual image data (e.g. purely safety blocks)
+            if not item.get("b64_json") and not item.get("url"):
+                 continue
             data_items.append(item)
         
         resp: Dict[str, Any] = {
@@ -832,8 +865,30 @@ class ResponseMapper:
         if unified.metadata:
             resp.update(unified.metadata)
         
-        if unified.usage_source == "openai" and unified.usage:
-            resp["usage"] = unified.usage
+        # Try to populate output_format from derived mime type if not already in metadata
+        if "output_format" not in resp and first_valid_mime:
+            # simplified map
+            if "png" in first_valid_mime:
+                resp["output_format"] = "png"
+            elif "jpeg" in first_valid_mime or "jpg" in first_valid_mime:
+                 resp["output_format"] = "jpeg"
+            elif "webp" in first_valid_mime:
+                 resp["output_format"] = "webp"
+        
+        if unified.usage:
+            if unified.usage_source == "gemini":
+                # Map Gemini usageMetadata to gpt-image-1 usage format
+                u = unified.usage
+                resp["usage"] = {
+                    "input_tokens": u.get("promptTokenCount", 0),
+                    "output_tokens": u.get("candidatesTokenCount", 0),
+                    "total_tokens": u.get("totalTokenCount", 0),
+                    # Standard OpenAI keys just in case clients expect them
+                    "prompt_tokens": u.get("promptTokenCount", 0),
+                    "completion_tokens": u.get("candidatesTokenCount", 0),
+                }
+            elif unified.usage_source == "openai":
+                 resp["usage"] = unified.usage
         
         return resp
 
