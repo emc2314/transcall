@@ -10,15 +10,27 @@ logger = logging.getLogger("ImageService")
 class ConfigManager:
     _instance = None
     _config: Dict[str, Any] = {}
+    _client_api_key: Optional[str] = None
 
     @classmethod
     def load(cls):
         try:
             with open(CONFIG_FILE, "r") as f:
                 cls._config = json.load(f)
+                api_key_value = cls._config.get("client_api_key")
+                api_key_env = cls._config.get("client_api_key_env")
+                resolved_key = None
+                if isinstance(api_key_value, (str, int, float)):
+                    resolved_key = str(api_key_value).strip()
+                if api_key_env:
+                    env_val = os.environ.get(str(api_key_env))
+                    if env_val:
+                        resolved_key = env_val.strip()
+                cls._client_api_key = resolved_key or None
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
             cls._config = {"models": {}}
+            cls._client_api_key = None
 
     @classmethod
     def get_model_config(cls, model_name: str) -> Optional[Dict]:
@@ -57,6 +69,12 @@ class ConfigManager:
             resolved_conf["credentials_json"] = creds
 
         return resolved_conf
+
+    @classmethod
+    def get_client_api_key(cls) -> Optional[str]:
+        if not cls._config:
+            cls.load()
+        return cls._client_api_key
 
 
 # Initialize on module import

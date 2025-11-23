@@ -13,8 +13,7 @@ def _binary_mode() -> str:
     return os.getenv("RAW_LOG_BINARY_MODE", "summary").strip().lower()
 
 
-def _truncate(text: str) -> str:
-    limit = _raw_log_char_limit()
+def _truncate_with_limit(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
 
@@ -26,6 +25,11 @@ def _truncate(text: str) -> str:
     head = text[:head_len]
     tail = text[-tail_len:]
     return f"{head}...{tail} (truncated, {len(text)} chars total)"
+
+
+def _truncate(text: str) -> str:
+    limit = _raw_log_char_limit()
+    return _truncate_with_limit(text, limit)
 
 
 def truncate_json(value: Any, limit: Optional[int] = None) -> Any:
@@ -46,7 +50,7 @@ def truncate_json(value: Any, limit: Optional[int] = None) -> Any:
 
     if isinstance(value, str):
         if len(value) > max_len:
-            return f"{value[:max_len]}... (truncated, {len(value)} chars total)"
+            return _truncate_with_limit(value, max_len)
         return value
 
     return value
@@ -169,14 +173,14 @@ def _serialize_body(body: Any, treat_as_binary: bool = False) -> str:
         return _truncate(str(body))
 
     if isinstance(body, str):
-        parsed_json: Optional[Any] = None
+        parsed_from_str: Optional[Any] = None
         try:
-            parsed_json = json.loads(body)
+            parsed_from_str = json.loads(body)
         except json.JSONDecodeError:
-            parsed_json = None
+            parsed_from_str = None
 
-        if parsed_json is not None:
-            serialized = _dump_truncated_json(parsed_json)
+        if parsed_from_str is not None:
+            serialized = _dump_truncated_json(parsed_from_str)
             if serialized is not None:
                 return serialized
 

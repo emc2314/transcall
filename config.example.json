@@ -20,5 +20,6 @@
       "location": "us-central1",
       "credentials_env": "VERTEXAI_CREDENTIALS"
     }
-  }
+  },
+  "client_api_key_env": "TRANS_CALL_CLIENT_KEY"
 }

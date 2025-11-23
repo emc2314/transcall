@@ -10,6 +10,7 @@ from google.genai import types
 LOCAL_API_URL = "http://localhost:8000"
 OPENAI_BASE_URL = f"{LOCAL_API_URL}/v1"
 GEMINI_BASE_URL = f"{LOCAL_API_URL}"
+CLIENT_API_KEY = os.getenv("CLIENT_API_KEY", "dummy-key")
 
 # Models to test
 MODEL_OPENAI = "gpt-image-1"
@@ -32,7 +33,7 @@ def verify_and_return_image(data_bytes: bytes, source_desc: str) -> Image.Image:
 
 def run_openai_sdk_tests(target_model: str):
     print(f"\n>>> Testing OpenAI SDK with model: {target_model}")
-    client = openai.OpenAI(base_url=OPENAI_BASE_URL, api_key="dummy-key")
+    client = openai.OpenAI(base_url=OPENAI_BASE_URL, api_key=CLIENT_API_KEY)
 
     # 1. Generate
     print(f"  1. Generating image...")
@@ -93,10 +94,11 @@ def run_google_genai_sdk_tests(target_model: str):
 
     client = genai.Client(
         vertexai=True,
-        api_key="dummy-key",
         http_options={
             "base_url": GEMINI_BASE_URL,
-            "headers": {"Authorization": "Bearer test_token"},
+            "headers": {
+                "Authorization": f"Bearer {CLIENT_API_KEY}",
+            },
         },
     )
 

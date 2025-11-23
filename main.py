@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from typing import List, Optional, Any, Dict, Tuple, Set
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import JSONResponse, Response
 
 from app.config import ConfigManager
@@ -10,6 +10,50 @@ from app.schemas import UnifiedImageRequest
 from app.mappers import RequestMapper, ResponseMapper
 from app.service import ImageGenerationService
 from app.logging_utils import log_debug_payload, format_structured
+
+
+def _extract_bearer_token(header_value: Optional[str]) -> Optional[str]:
+    if not header_value:
+        return None
+    parts = header_value.strip().split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        token = parts[1].strip()
+        return token or None
+    return None
+
+
+async def verify_api_key(request: Request):
+    expected = ConfigManager.get_client_api_key()
+    if not expected:
+        return
+
+    provided: Optional[str] = None
+
+    # x-goog-api-key header (Vertex AI preference)
+    provided = request.headers.get("x-goog-api-key")
+    if provided:
+        provided = provided.strip() or None
+    # Authorization header (Bearer <token>)
+    if not provided:
+        provided = _extract_bearer_token(request.headers.get("authorization"))
+    # key query parameter (e.g. ?key=...)
+    if not provided:
+        provided = request.query_params.get("key")
+    # JSON payload embedded key (common in some SDKs)
+    if not provided:
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        if isinstance(body, dict):
+            provided = body.get("key")
+            if not provided:
+                params_section = body.get("params")
+                if isinstance(params_section, dict):
+                    provided = params_section.get("key")
+
+    if not provided or provided.strip() != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 def _configure_logging() -> logging.Logger:
@@ -132,7 +176,7 @@ def _enforce_non_streaming(
 
 @app.post("/images/generations")
 @app.post("/v1/images/generations")
-async def openai_generations(request: Request):
+async def openai_generations(request: Request, _: None = Depends(verify_api_key)):
     try:
         body = await request.json()
     except Exception:
@@ -169,6 +213,7 @@ async def openai_generations(request: Request):
 @app.post("/images/edits")
 @app.post("/v1/images/edits")
 async def openai_edits(
+    _: None = Depends(verify_api_key),
     model: str = Form(...),
     prompt: str = Form(...),
     image_primary: List[UploadFile] = File(default_factory=list, alias="image"),
@@ -287,7 +332,6 @@ async def openai_edits(
 @app.post("/v1beta/models/{model_name}:generateContent")
 @app.post("/v1beta1/models/{model_name}:generateContent")
 @app.post("/v1/models/{model_name}:generateContent")
-# Support Vertex AI style paths (simplified for proxying, ignoring project/location/publisher parts)
 @app.post("/v1beta1/publishers/google/models/{model_name}:generateContent")
 @app.post("/v1/publishers/google/models/{model_name}:generateContent")
 @app.post(
@@ -301,6 +345,7 @@ async def gemini_generate_content(
     request: Request,
     project: Optional[str] = None,
     location: Optional[str] = None,
+    _: None = Depends(verify_api_key),
 ):
     try:
         body = await request.json()
