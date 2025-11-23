@@ -195,13 +195,21 @@ class RequestMapper:
         RequestMapper._warn_unknown_fields(part, known_part_fields, context)
 
         inline_data_obj: Optional[GeminiInlineData] = None
-        inline_data = part.get("inlineData")
+        # Check both camelCase (API standard) and snake_case (Python SDK typical)
+        inline_data = part.get("inlineData") or part.get("inline_data")
+
         if inline_data:
-            RequestMapper._warn_unknown_fields(
-                inline_data, {"mimeType", "data"}, f"{context} inlineData"
-            )
+            # Warn if we found snake_case but known_fields only had camelCase (optional, but good for debugging)
+            # RequestMapper._warn_unknown_fields(inline_data, {"mimeType", "data", "mime_type"}, f"{context} inlineData")
+
             data_str = inline_data.get("data", "") or ""
-            mime_type = inline_data.get("mimeType", "application/octet-stream")
+            # Check both mimeType and mime_type
+            mime_type = (
+                inline_data.get("mimeType")
+                or inline_data.get("mime_type")
+                or "application/octet-stream"
+            )
+
             data_bytes = b""
             if data_str:
                 try:

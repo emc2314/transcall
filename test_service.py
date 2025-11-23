@@ -153,7 +153,11 @@ def run_google_genai_sdk_tests(target_model: str):
         ]
 
         response = client.models.generate_content(
-            model=target_model, contents=edit_contents  # type: ignore
+            model=target_model,
+            contents=edit_contents,
+            config=types.GenerateContentConfig(
+                response_modalities=[types.Modality.TEXT, types.Modality.IMAGE]
+            ),
         )
 
         if not response.candidates:
