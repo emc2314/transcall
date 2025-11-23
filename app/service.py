@@ -6,24 +6,27 @@ from app.schemas import UnifiedImageRequest, UnifiedImageResponse
 from app.config import ConfigManager
 from app.mappers import RequestMapper, ResponseMapper
 from app.logging_utils import log_debug_payload, format_binary_content
+from app.auth import GoogleAuthManager
 
 logger = logging.getLogger("Service")
 
 class ImageGenerationService:
-    
+
     @staticmethod
     async def process_request(req: UnifiedImageRequest) -> UnifiedImageResponse:
         # 1. Get Provider Config
         config = ConfigManager.get_model_config(req.target_model)
         if not config:
             raise HTTPException(status_code=400, detail=f"Model '{req.target_model}' not supported.")
-        
+
         provider = config.get("provider")
-        
+
         if provider == "openai":
             return await ImageGenerationService._call_openai(req, config)
         elif provider == "gemini":
             return await ImageGenerationService._call_gemini(req, config)
+        elif provider == "vertexai":
+            return await ImageGenerationService._call_vertexai(req, config)
         else:
             raise HTTPException(status_code=500, detail=f"Unknown provider '{provider}'")
 
@@ -49,7 +52,7 @@ class ImageGenerationService:
             headers = {"Authorization": f"Bearer {api_key}"}
             images_base = f"{url_base}/images"
             params = None
-        
+
         # Determine endpoint based on content (presence of input images)
         timeout_seconds = config.get("timeout_seconds", 120)
         timeout = httpx.Timeout(timeout_seconds)
@@ -57,7 +60,7 @@ class ImageGenerationService:
         if req.input_image_bytes_list:
             # Edits Endpoint
             url = f"{images_base}/edits"
-            
+
             # Construct Multipart for ALL images and optional mask
             files_list_for_httpx = []
             field_names = req.input_image_field_names or []
@@ -82,7 +85,7 @@ class ImageGenerationService:
                     "size_bytes": len(req.mask_image_bytes),
                     "content": format_binary_content(req.mask_image_bytes)
                 })
-            
+
             # Data params (convert to string for multipart form data)
             payload = RequestMapper.unified_to_openai_payload(req)
             data = {k: str(v) for k, v in payload.items() if v is not None}
@@ -97,7 +100,7 @@ class ImageGenerationService:
                     "files": files_log
                 }
             )
-            
+
             logger.info(f"Calling OpenAI Edits: {url}")
             timeout = httpx.Timeout(config.get("timeout_seconds", 120))
             try:
@@ -128,7 +131,7 @@ class ImageGenerationService:
                     "json": payload
                 }
             )
-            
+
             logger.info(f"Calling OpenAI Generations: {url}")
             timeout = httpx.Timeout(config.get("timeout_seconds", 120))
             try:
@@ -143,7 +146,7 @@ class ImageGenerationService:
                 raise HTTPException(status_code=504, detail="Upstream service timed out")
             except httpx.RequestError as e:
                 raise HTTPException(status_code=502, detail=f"Upstream connection error: {str(e)}")
-        
+
         log_debug_payload(
             logger,
             f"[UPSTREAM RESPONSE][openai] {resp.status_code} {url}",
@@ -154,7 +157,7 @@ class ImageGenerationService:
         if resp.status_code >= 400:
             logger.error(f"OpenAI Error: {resp.text}")
             raise HTTPException(status_code=resp.status_code, detail=f"Upstream Error: {resp.text}")
-            
+
         return ResponseMapper.openai_to_unified(resp.json())
 
     @staticmethod
@@ -162,7 +165,7 @@ class ImageGenerationService:
         url = f"{config['base_url']}/models/{req.target_model}:generateContent"
         params_qs = {"key": config['api_key']}
         headers = {"Content-Type": "application/json"}
-        
+
         payload = RequestMapper.unified_to_gemini_payload(req)
 
         log_debug_payload(
@@ -174,7 +177,7 @@ class ImageGenerationService:
                 "json": payload
             }
         )
-        
+
         logger.info(f"Calling Gemini: {url}")
         timeout = httpx.Timeout(config.get("timeout_seconds", 120))
         try:
@@ -184,7 +187,7 @@ class ImageGenerationService:
             raise HTTPException(status_code=504, detail="Upstream service timed out")
         except httpx.RequestError as e:
             raise HTTPException(status_code=502, detail=f"Upstream connection error: {str(e)}")
-            
+
         log_debug_payload(
             logger,
             f"[UPSTREAM RESPONSE][gemini] {resp.status_code} {url}",
@@ -196,4 +199,76 @@ class ImageGenerationService:
             logger.error(f"Gemini Error: {resp.text}")
             raise HTTPException(status_code=resp.status_code, detail=f"Upstream Error: {resp.text}")
 
+        return ResponseMapper.gemini_to_unified(resp.json())
+
+    @staticmethod
+    async def _call_vertexai(req: UnifiedImageRequest, config: Dict[str, Any]) -> UnifiedImageResponse:
+        # 1. Get Credentials and Token
+        creds_json = config.get("credentials_json")
+        if not creds_json:
+             raise HTTPException(status_code=500, detail="Missing 'credentials_json' or configured env var for Vertex AI model.")
+
+        try:
+            access_token = GoogleAuthManager.get_access_token(creds_json)
+        except Exception as e:
+            logger.error(f"Failed to get Vertex AI access token: {e}")
+            raise HTTPException(status_code=500, detail="Failed to authenticate with Vertex AI.")
+
+        # 2. Construct URL
+        # Format: https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:generateContent
+        project_id = config.get("project_id")
+        location = config.get("location")
+
+        if not project_id or not location:
+             raise HTTPException(status_code=500, detail="Vertex AI config requires 'project_id' and 'location'.")
+
+        api_endpoint = config.get("api_endpoint")
+        if not api_endpoint:
+            api_endpoint = f"aiplatform.googleapis.com"
+
+        # Use target_model from request, but Vertex usually requires just the ID like "gemini-pro-vision"
+        model_id = req.target_model
+
+        # The user example used :generateContent, so we hardcode that for now as this service is for generation.
+        method = "generateContent"
+
+        url = f"https://{api_endpoint}/v1/projects/{project_id}/locations/{location}/publishers/google/models/{model_id}:{method}"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+
+        # 3. Construct Payload (Same as Gemini)
+        payload = RequestMapper.unified_to_gemini_payload(req)
+
+        log_debug_payload(
+            logger,
+            f"[UPSTREAM REQUEST][vertexai] POST {url}",
+            headers=headers,
+            body={"json": payload}
+        )
+
+        logger.info(f"Calling Vertex AI: {url}")
+        timeout = httpx.Timeout(config.get("timeout_seconds", 120))
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Upstream service timed out")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"Upstream connection error: {str(e)}")
+
+        log_debug_payload(
+            logger,
+            f"[UPSTREAM RESPONSE][vertexai] {resp.status_code} {url}",
+            headers=resp.headers,
+            body=resp.text
+        )
+
+        if resp.status_code >= 400:
+            logger.error(f"Vertex AI Error: {resp.text}")
+            raise HTTPException(status_code=resp.status_code, detail=f"Upstream Error: {resp.text}")
+
+        # 4. Map Response (Same as Gemini)
         return ResponseMapper.gemini_to_unified(resp.json())

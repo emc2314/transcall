@@ -43,6 +43,14 @@ class ConfigManager:
             # If neither exists, api_key will be None or whatever was in json.
             pass
             
+        # Resolve Credentials JSON from environment variable (for Vertex AI)
+        cred_env_name = resolved_conf.get("credentials_env")
+        if cred_env_name:
+            creds = os.environ.get(cred_env_name)
+            if not creds:
+                logger.warning(f"Environment variable '{cred_env_name}' not found for model '{model_name}'")
+            resolved_conf["credentials_json"] = creds
+            
         return resolved_conf
 
 # Initialize on module import

@@ -11,6 +11,12 @@
       "provider": "gemini",
       "base_url": "https://generativelanguage.googleapis.com/v1beta",
       "api_key_env": "GEMINI_API_KEY"
+    },
+    "gemini-1.5-pro-vertex": {
+      "provider": "vertexai",
+      "project_id": "your-google-cloud-project-id",
+      "location": "us-central1",
+      "credentials_env": "VERTEXAI_CREDENTIALS"
     }
   }
 }
