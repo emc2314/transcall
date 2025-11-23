@@ -176,6 +176,22 @@ class RequestMapper:
             logger.warning(f"[{context}] Unknown fields found and ignored: {unknown}")
 
     @staticmethod
+    def _decode_inline_data(data_str: str, context: str) -> bytes:
+        normalized = (data_str or "").strip()
+        if not normalized:
+            return b""
+
+        padding = (-len(normalized)) % 4
+        if padding:
+            normalized += "=" * padding
+
+        try:
+            return base64.b64decode(normalized, altchars=b"-_")
+        except Exception as exc:
+            logger.warning(f"[{context}] Failed to decode inlineData: {exc}")
+            return b""
+
+    @staticmethod
     def _parse_gemini_part(
         part: Dict[str, Any], content_idx: int, part_idx: int
     ) -> GeminiContentPart:
@@ -216,10 +232,7 @@ class RequestMapper:
 
             data_bytes = b""
             if data_str:
-                try:
-                    data_bytes = base64.b64decode(data_str)
-                except Exception as exc:
-                    logger.warning(f"[{context}] Failed to decode inlineData: {exc}")
+                data_bytes = RequestMapper._decode_inline_data(data_str, context)
 
             # Auto-detect correct mime type if generic or missing
             if not mime_type or mime_type == "application/octet-stream":

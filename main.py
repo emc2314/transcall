@@ -9,7 +9,7 @@ from app.config import ConfigManager
 from app.schemas import UnifiedImageRequest
 from app.mappers import RequestMapper, ResponseMapper
 from app.service import ImageGenerationService
-from app.logging_utils import log_debug_payload
+from app.logging_utils import log_debug_payload, format_structured
 
 
 def _configure_logging() -> logging.Logger:
@@ -138,7 +138,7 @@ async def openai_generations(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    logger.info(f"Params (OpenAI Gen): {body}")
+    logger.info("Params (OpenAI Gen): %s", format_structured(body))
 
     _enforce_non_streaming(body.get("stream"), body.get("partial_images"))
 
@@ -307,7 +307,7 @@ async def gemini_generate_content(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    logger.info(f"Params (Gemini): {body}")
+    logger.info("Params (Gemini): %s", format_structured(body))
 
     # Config Check
     config = ConfigManager.get_model_config(model_name)

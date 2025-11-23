@@ -15,9 +15,17 @@ def _binary_mode() -> str:
 
 def _truncate(text: str) -> str:
     limit = _raw_log_char_limit()
-    if len(text) > limit:
+    if len(text) <= limit:
+        return text
+
+    if limit <= 4:
         return f"{text[:limit]}... (truncated, {len(text)} chars total)"
-    return text
+
+    head_len = max(1, limit // 2)
+    tail_len = max(1, limit - head_len)
+    head = text[:head_len]
+    tail = text[-tail_len:]
+    return f"{head}...{tail} (truncated, {len(text)} chars total)"
 
 
 def truncate_json(value: Any, limit: Optional[int] = None) -> Any:
@@ -42,6 +50,48 @@ def truncate_json(value: Any, limit: Optional[int] = None) -> Any:
         return value
 
     return value
+
+
+def format_structured(obj: Any) -> str:
+    """
+    Produce a truncated JSON string for dict/list/JSON-string inputs
+    while preserving structure where possible.
+    """
+    limit = _raw_log_char_limit()
+
+    def _dump(obj_to_dump: Any) -> Optional[str]:
+        try:
+            truncated = truncate_json(obj_to_dump, limit)
+            return json.dumps(truncated, ensure_ascii=False)
+        except Exception:
+            return None
+
+    if isinstance(obj, (dict, list, tuple)):
+        serialized = _dump(obj)
+        if serialized is not None:
+            return serialized
+        return _truncate(str(obj))
+
+    if isinstance(obj, (bytes, bytearray)):
+        try:
+            parsed = json.loads(obj.decode("utf-8"))
+            serialized = _dump(parsed)
+            if serialized is not None:
+                return serialized
+        except Exception:
+            return _truncate(obj.decode("utf-8", errors="replace"))
+
+    if isinstance(obj, str):
+        try:
+            parsed = json.loads(obj)
+            serialized = _dump(parsed)
+            if serialized is not None:
+                return serialized
+        except json.JSONDecodeError:
+            pass
+        return _truncate(obj)
+
+    return _truncate(str(obj))
 
 
 def _serialize_headers(headers: Optional[Mapping[str, Any]]) -> str:
@@ -117,6 +167,20 @@ def _serialize_body(body: Any, treat_as_binary: bool = False) -> str:
         if serialized is not None:
             return serialized
         return _truncate(str(body))
+
+    if isinstance(body, str):
+        parsed_json: Optional[Any] = None
+        try:
+            parsed_json = json.loads(body)
+        except json.JSONDecodeError:
+            parsed_json = None
+
+        if parsed_json is not None:
+            serialized = _dump_truncated_json(parsed_json)
+            if serialized is not None:
+                return serialized
+
+        return _truncate(body)
 
     return _truncate(str(body))
 
