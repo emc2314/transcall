@@ -15,23 +15,24 @@ GEMINI_BASE_URL = f"{LOCAL_API_URL}"
 MODEL_OPENAI = "gpt-image-1"
 MODEL_GEMINI = "gemini-3-pro-image-preview"
 
+
 def verify_and_return_image(data_bytes: bytes, source_desc: str) -> Image.Image:
     """Verifies the bytes are a valid image and returns the PIL Image object."""
     try:
         img = Image.open(io.BytesIO(data_bytes))
         img.load()  # Force load to verify validity
-        print(f"  [PASS] Valid image received from {source_desc} ({img.format} {img.size})")
+        print(
+            f"  [PASS] Valid image received from {source_desc} ({img.format} {img.size})"
+        )
         return img
     except Exception as e:
         print(f"  [FAIL] Invalid image data from {source_desc}: {e}")
         raise
 
+
 def run_openai_sdk_tests(target_model: str):
     print(f"\n>>> Testing OpenAI SDK with model: {target_model}")
-    client = openai.OpenAI(
-        base_url=OPENAI_BASE_URL,
-        api_key="dummy-key"
-    )
+    client = openai.OpenAI(base_url=OPENAI_BASE_URL, api_key="dummy-key")
 
     # 1. Generate
     print(f"  1. Generating image...")
@@ -40,7 +41,7 @@ def run_openai_sdk_tests(target_model: str):
             model=target_model,
             prompt="A colorful hot air balloon flying over a mountain range",
             size="1024x1024",
-            n=1
+            n=1,
         )
         if not resp.data:
             print("  [FAIL] No data returned from OpenAI generate.")
@@ -48,8 +49,8 @@ def run_openai_sdk_tests(target_model: str):
 
         b64_str = resp.data[0].b64_json
         if not b64_str:
-             print("  [FAIL] No b64_json in response.")
-             return
+            print("  [FAIL] No b64_json in response.")
+            return
 
         img_bytes = base64.b64decode(b64_str)
         generated_img = verify_and_return_image(img_bytes, "Generation")
@@ -62,7 +63,7 @@ def run_openai_sdk_tests(target_model: str):
     try:
         # Convert PIL image back to bytes for upload
         img_byte_arr = io.BytesIO()
-        generated_img.save(img_byte_arr, format='PNG')
+        generated_img.save(img_byte_arr, format="PNG")
         img_byte_arr.seek(0)
 
         resp = client.images.edit(
@@ -70,7 +71,7 @@ def run_openai_sdk_tests(target_model: str):
             image=img_byte_arr,
             prompt="Make the image black and white, pencil sketch style",
             size="1024x1024",
-            n=1
+            n=1,
         )
         if not resp.data:
             print("  [FAIL] No data returned from OpenAI edit.")
@@ -78,13 +79,14 @@ def run_openai_sdk_tests(target_model: str):
 
         b64_str = resp.data[0].b64_json
         if not b64_str:
-             print("  [FAIL] No b64_json in edit response.")
-             return
+            print("  [FAIL] No b64_json in edit response.")
+            return
 
         edit_bytes = base64.b64decode(b64_str)
         verify_and_return_image(edit_bytes, "Edit")
     except Exception as e:
         print(f"  [ERROR] Edit failed: {e}")
+
 
 def run_google_genai_sdk_tests(target_model: str):
     print(f"\n>>> Testing Google GenAI SDK with model: {target_model}")
@@ -94,8 +96,8 @@ def run_google_genai_sdk_tests(target_model: str):
         api_key="dummy-key",
         http_options={
             "base_url": GEMINI_BASE_URL,
-            "headers": {"Authorization": "Bearer test_token"}
-        }
+            "headers": {"Authorization": "Bearer test_token"},
+        },
     )
 
     # 1. Generate
@@ -106,17 +108,17 @@ def run_google_genai_sdk_tests(target_model: str):
             contents="A cyberpunk cat wearing sunglasses",
             config=types.GenerateContentConfig(
                 response_modalities=[types.Modality.TEXT, types.Modality.IMAGE]
-            )
+            ),
         )
 
         if not response.candidates:
-             print("  [FAIL] No candidates returned.")
-             return
+            print("  [FAIL] No candidates returned.")
+            return
 
         cand = response.candidates[0]
         if not cand.content or not cand.content.parts:
-             print("  [FAIL] Candidate has no content or parts.")
-             return
+            print("  [FAIL] Candidate has no content or parts.")
+            return
 
         # The unified mapper puts the b64 string into inline_data
         # Iterate through parts to find the image, as thinking models return multiple parts
@@ -126,10 +128,12 @@ def run_google_genai_sdk_tests(target_model: str):
                 if part.inline_data:
                     image_part = part
                     break
-        
+
         if image_part and image_part.inline_data and image_part.inline_data.data:
             # SDK automatically decodes base64 inline_data.data to bytes
-            generated_img = verify_and_return_image(image_part.inline_data.data, "Generation")
+            generated_img = verify_and_return_image(
+                image_part.inline_data.data, "Generation"
+            )
         else:
             print("  [FAIL] No inline image data found in any part.")
             return
@@ -143,21 +147,23 @@ def run_google_genai_sdk_tests(target_model: str):
     try:
         # For visual prompting, we pass the PIL Image directly
         # Casting list contents for MyPy satisfaction (though runtime is fine)
-        edit_contents = [generated_img, "Make this image black and white, high contrast"]
+        edit_contents = [
+            generated_img,
+            "Make this image black and white, high contrast",
+        ]
 
         response = client.models.generate_content(
-            model=target_model,
-            contents=edit_contents  # type: ignore
+            model=target_model, contents=edit_contents  # type: ignore
         )
 
         if not response.candidates:
-             print("  [FAIL] No candidates returned for edit.")
-             return
+            print("  [FAIL] No candidates returned for edit.")
+            return
 
         cand = response.candidates[0]
         if not cand.content or not cand.content.parts:
-             print("  [FAIL] Candidate has no content or parts.")
-             return
+            print("  [FAIL] Candidate has no content or parts.")
+            return
 
         image_part = None
         for part in cand.content.parts:
@@ -170,9 +176,9 @@ def run_google_genai_sdk_tests(target_model: str):
         else:
             print("  [FAIL] No inline image data found in edit response.")
 
-
     except Exception as e:
         print(f"  [ERROR] Edit failed: {e}")
+
 
 if __name__ == "__main__":
     print("=== Starting Transcall Service Tests (8 Total) ===")

@@ -23,9 +23,9 @@ def _truncate(text: str) -> str:
 def _serialize_headers(headers: Optional[Mapping[str, Any]]) -> str:
     if headers is None:
         return ""
-    
+
     sensitive_keys = {"authorization", "api-key", "x-api-key", "cookie", "token"}
-    
+
     try:
         header_dict = {}
         for k, v in headers.items():
@@ -41,7 +41,7 @@ def _serialize_headers(headers: Optional[Mapping[str, Any]]) -> str:
     except Exception:
         # Fallback if iteration fails, though unlikely with Mapping
         header_dict = {"error": "Failed to serialize headers"}
-        
+
     return _truncate(json.dumps(header_dict, ensure_ascii=False))
 
 
@@ -78,7 +78,7 @@ def log_debug_payload(
     prefix: str,
     headers: Optional[Mapping[str, Any]] = None,
     body: Any = None,
-    treat_body_as_binary: bool = False
+    treat_body_as_binary: bool = False,
 ) -> None:
     """
     Log headers/body payloads when the logger is in DEBUG level.

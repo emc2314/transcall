@@ -1,5 +1,6 @@
 from typing import Optional
 
+
 def detect_content_type(data: bytes) -> Optional[str]:
     """
     Detects MIME type based on file signature (magic numbers).

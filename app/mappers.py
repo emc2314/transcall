@@ -16,6 +16,7 @@ from app.utils import detect_content_type
 
 logger = logging.getLogger("Mappers")
 
+
 class RequestMapper:
     _OPENAI_OPTIONAL_FIELDS: Set[str] = {
         "n",
@@ -30,7 +31,7 @@ class RequestMapper:
         "partial_images",
         "stream",
         "user",
-        "input_fidelity"
+        "input_fidelity",
     }
 
     _GEMINI_OPTIONAL_FIELDS: Set[str] = {
@@ -39,7 +40,7 @@ class RequestMapper:
         "tools",
         "toolConfig",
         "systemInstruction",
-        "cachedContent"
+        "cachedContent",
     }
     _OPENAI_ALLOWED_SIZES: Set[str] = {"1024x1024", "1536x1024", "1024x1536"}
     _OPENAI_DEFAULT_SIZE: str = "1024x1024"
@@ -48,9 +49,18 @@ class RequestMapper:
     def _gemini_contents_have_complex_parts(contents: List[GeminiContent]) -> bool:
         for content in contents:
             for part in content.parts:
-                if part.inline_data or part.function_call or part.function_response or part.file_data or part.executable_code \
-                        or part.code_execution_result or part.video_metadata or part.part_metadata \
-                        or part.thought is not None or part.thought_signature:
+                if (
+                    part.inline_data
+                    or part.function_call
+                    or part.function_response
+                    or part.file_data
+                    or part.executable_code
+                    or part.code_execution_result
+                    or part.video_metadata
+                    or part.part_metadata
+                    or part.thought is not None
+                    or part.thought_signature
+                ):
                     return True
         return False
 
@@ -94,8 +104,7 @@ class RequestMapper:
             return token
 
         logger.warning(
-            "[OpenAI Request] Unknown size '%s'. Omitting Gemini imageConfig.",
-            cleaned
+            "[OpenAI Request] Unknown size '%s'. Omitting Gemini imageConfig.", cleaned
         )
         return None
 
@@ -117,7 +126,7 @@ class RequestMapper:
         if unsupported_fields:
             logger.warning(
                 "[OpenAI Payload] Dropping unsupported Gemini fields: %s",
-                ", ".join(sorted(unsupported_fields))
+                ", ".join(sorted(unsupported_fields)),
             )
 
         if req.gemini_contents:
@@ -154,17 +163,21 @@ class RequestMapper:
         if openai_only_fields:
             logger.warning(
                 "[Gemini Payload] Ignoring OpenAI-only fields that have no Gemini equivalent: %s",
-                ", ".join(sorted(openai_only_fields))
+                ", ".join(sorted(openai_only_fields)),
             )
 
     @staticmethod
-    def _warn_unknown_fields(data: Dict[str, Any], known_fields: Set[str], context: str):
+    def _warn_unknown_fields(
+        data: Dict[str, Any], known_fields: Set[str], context: str
+    ):
         unknown = set(data.keys()) - known_fields
         if unknown:
             logger.warning(f"[{context}] Unknown fields found and ignored: {unknown}")
 
     @staticmethod
-    def _parse_gemini_part(part: Dict[str, Any], content_idx: int, part_idx: int) -> GeminiContentPart:
+    def _parse_gemini_part(
+        part: Dict[str, Any], content_idx: int, part_idx: int
+    ) -> GeminiContentPart:
         context = f"Gemini Content[{content_idx}] Part[{part_idx}]"
         known_part_fields = {
             "inlineData",
@@ -177,14 +190,16 @@ class RequestMapper:
             "functionResponse",
             "fileData",
             "executableCode",
-            "codeExecutionResult"
+            "codeExecutionResult",
         }
         RequestMapper._warn_unknown_fields(part, known_part_fields, context)
 
         inline_data_obj: Optional[GeminiInlineData] = None
         inline_data = part.get("inlineData")
         if inline_data:
-            RequestMapper._warn_unknown_fields(inline_data, {"mimeType", "data"}, f"{context} inlineData")
+            RequestMapper._warn_unknown_fields(
+                inline_data, {"mimeType", "data"}, f"{context} inlineData"
+            )
             data_str = inline_data.get("data", "") or ""
             mime_type = inline_data.get("mimeType", "application/octet-stream")
             data_bytes = b""
@@ -193,7 +208,7 @@ class RequestMapper:
                     data_bytes = base64.b64decode(data_str)
                 except Exception as exc:
                     logger.warning(f"[{context}] Failed to decode inlineData: {exc}")
-            
+
             # Auto-detect correct mime type if generic or missing
             if not mime_type or mime_type == "application/octet-stream":
                 detected = detect_content_type(data_bytes)
@@ -217,7 +232,9 @@ class RequestMapper:
         )
 
     @staticmethod
-    def _parse_gemini_contents(body: Dict[str, Any]) -> Tuple[Optional[List[GeminiContent]], str, List[bytes], List[str]]:
+    def _parse_gemini_contents(
+        body: Dict[str, Any],
+    ) -> Tuple[Optional[List[GeminiContent]], str, List[bytes], List[str]]:
         parsed_contents: List[GeminiContent] = []
         prompt_fragments: List[str] = []
         image_bytes: List[bytes] = []
@@ -225,19 +242,26 @@ class RequestMapper:
 
         contents = body.get("contents", []) or []
         for content_idx, content in enumerate(contents):
-            RequestMapper._warn_unknown_fields(content, {"role", "parts"}, f"Gemini Content[{content_idx}]")
+            RequestMapper._warn_unknown_fields(
+                content, {"role", "parts"}, f"Gemini Content[{content_idx}]"
+            )
             role = content.get("role")
             parts_raw = content.get("parts", []) or []
             parts: List[GeminiContentPart] = []
 
             for part_idx, part in enumerate(parts_raw):
-                parsed_part = RequestMapper._parse_gemini_part(part, content_idx, part_idx)
+                parsed_part = RequestMapper._parse_gemini_part(
+                    part, content_idx, part_idx
+                )
                 parts.append(parsed_part)
 
                 if parsed_part.text:
                     prompt_fragments.append(parsed_part.text)
 
-                if parsed_part.inline_data and parsed_part.inline_data.mime_type.lower().startswith("image/"):
+                if (
+                    parsed_part.inline_data
+                    and parsed_part.inline_data.mime_type.lower().startswith("image/")
+                ):
                     image_bytes.append(parsed_part.inline_data.data)
                     image_mimes.append(parsed_part.inline_data.mime_type)
 
@@ -287,13 +311,28 @@ class RequestMapper:
         return aspect_ratio, image_size
 
     @staticmethod
-    def openai_gen_to_unified(body: Dict, config: Dict, provider: str) -> UnifiedImageRequest:
+    def openai_gen_to_unified(
+        body: Dict, config: Dict, provider: str
+    ) -> UnifiedImageRequest:
         known_fields = {
-            "model", "prompt", "n", "size", "response_format", "user",
-            "style", "background", "moderation", "quality", 
-            "output_format", "output_compression", "partial_images", "stream"
+            "model",
+            "prompt",
+            "n",
+            "size",
+            "response_format",
+            "user",
+            "style",
+            "background",
+            "moderation",
+            "quality",
+            "output_format",
+            "output_compression",
+            "partial_images",
+            "stream",
         }
-        RequestMapper._warn_unknown_fields(body, known_fields, "OpenAI Generation Request")
+        RequestMapper._warn_unknown_fields(
+            body, known_fields, "OpenAI Generation Request"
+        )
 
         provided_fields: Set[str] = set()
         for field in RequestMapper._OPENAI_OPTIONAL_FIELDS:
@@ -307,7 +346,6 @@ class RequestMapper:
             n=body.get("n", 1),
             size=body.get("size"),
             response_format=body.get("response_format"),
-            
             # Extended OpenAI parameters
             style=body.get("style"),
             background=body.get("background"),
@@ -318,12 +356,12 @@ class RequestMapper:
             partial_images=body.get("partial_images"),
             stream=body.get("stream"),
             user=body.get("user"),
-            openai_payload_fields=provided_fields
+            openai_payload_fields=provided_fields,
         )
 
     @staticmethod
     def openai_edit_to_unified(
-        params: Dict, 
+        params: Dict,
         image_data_list: List[Tuple[bytes, str]],
         mask_data: Optional[Tuple[bytes, str]] = None,
         config: Optional[Dict] = None,
@@ -331,11 +369,22 @@ class RequestMapper:
         provided_fields: Optional[Set[str]] = None,
         image_field_names: Optional[List[str]] = None,
     ) -> UnifiedImageRequest:
-        
+
         known_fields = {
-            "model", "prompt", "n", "size", "response_format", "user",
-            "background", "moderation", "quality", "output_format", 
-            "output_compression", "partial_images", "stream", "input_fidelity"
+            "model",
+            "prompt",
+            "n",
+            "size",
+            "response_format",
+            "user",
+            "background",
+            "moderation",
+            "quality",
+            "output_format",
+            "output_compression",
+            "partial_images",
+            "stream",
+            "input_fidelity",
         }
         RequestMapper._warn_unknown_fields(params, known_fields, "OpenAI Edit Request")
 
@@ -348,7 +397,6 @@ class RequestMapper:
             n=params.get("n", 1),
             size=params.get("size"),
             response_format=params.get("response_format"),
-
             # Extended OpenAI parameters
             background=params.get("background"),
             moderation=params.get("moderation"),
@@ -359,67 +407,90 @@ class RequestMapper:
             stream=params.get("stream"),
             user=params.get("user"),
             input_fidelity=params.get("input_fidelity"),
-
             # Image data for edits
             input_image_bytes_list=[img[0] for img in image_data_list],
             input_image_mime_list=[
                 (
-                    detect_content_type(img[0]) or img[1] 
-                    if (not img[1] or img[1] == "application/octet-stream") 
+                    detect_content_type(img[0]) or img[1]
+                    if (not img[1] or img[1] == "application/octet-stream")
                     else img[1]
-                ) 
+                )
                 for img in image_data_list
             ],
             input_image_field_names=image_field_names,
             mask_image_bytes=mask_data[0] if mask_data else None,
             mask_image_mime=(
                 detect_content_type(mask_data[0]) or mask_data[1]
-                if mask_data and (not mask_data[1] or mask_data[1] == "application/octet-stream")
+                if mask_data
+                and (not mask_data[1] or mask_data[1] == "application/octet-stream")
                 else (mask_data[1] if mask_data else None)
             ),
-            openai_payload_fields=provided_fields
+            openai_payload_fields=provided_fields,
         )
 
     @staticmethod
-    def gemini_content_to_unified(body: Dict, model_name: str, config: Dict, provider: str) -> UnifiedImageRequest:
+    def gemini_content_to_unified(
+        body: Dict, model_name: str, config: Dict, provider: str
+    ) -> UnifiedImageRequest:
         known_fields = {
-            "contents", "tools", "toolConfig", "safetySettings", 
-            "systemInstruction", "generationConfig", "cachedContent"
+            "contents",
+            "tools",
+            "toolConfig",
+            "safetySettings",
+            "systemInstruction",
+            "generationConfig",
+            "cachedContent",
         }
         RequestMapper._warn_unknown_fields(body, known_fields, "Gemini Content Request")
 
-        parsed_contents, prompt, img_bytes, img_mimes = RequestMapper._parse_gemini_contents(body)
+        parsed_contents, prompt, img_bytes, img_mimes = (
+            RequestMapper._parse_gemini_contents(body)
+        )
 
         provided_gemini_fields: Set[str] = set()
         for field in RequestMapper._GEMINI_OPTIONAL_FIELDS:
             if body.get(field) is not None:
                 provided_gemini_fields.add(field)
-        
+
         gen_config = body.get("generationConfig", {}) or {}
         n = gen_config.get("candidateCount", 1)
         image_config = gen_config.get("imageConfig", {})
         aspect_ratio = image_config.get("aspectRatio") or "1:1"
 
         # Extract other generic generation config
-        known_gen_config_fields = {"candidateCount", "imageConfig", "stopSequences", "maxOutputTokens", 
-                                   "temperature", "topP", "topK", "seed", "responseMimeType", "responseSchema",
-                                   "responseLogprobs", "logprobs"}
-        
+        known_gen_config_fields = {
+            "candidateCount",
+            "imageConfig",
+            "stopSequences",
+            "maxOutputTokens",
+            "temperature",
+            "topP",
+            "topK",
+            "seed",
+            "responseMimeType",
+            "responseSchema",
+            "responseLogprobs",
+            "logprobs",
+        }
+
         # Keep imageConfig in generation_config. Only strip candidateCount as it maps to 'n'.
-        other_gen_config = {k: v for k, v in gen_config.items() if k not in {"candidateCount"}}
-        RequestMapper._warn_unknown_fields(gen_config, known_gen_config_fields, "Gemini Generation Config")
+        other_gen_config = {
+            k: v for k, v in gen_config.items() if k not in {"candidateCount"}
+        }
+        RequestMapper._warn_unknown_fields(
+            gen_config, known_gen_config_fields, "Gemini Generation Config"
+        )
 
         # Always use the requested model name as the target so Service can look up the right config
         target_model = model_name
-        
+
         return UnifiedImageRequest(
             target_model=target_model,
             provider=provider,
             prompt=prompt,
             n=n,
-            size=None, # No WxH size yet, preserved in generation_config
-            response_format=None, # Do not invent response_format; let lowering decide defaults or omission
-            
+            size=None,  # No WxH size yet, preserved in generation_config
+            response_format=None,  # Do not invent response_format; let lowering decide defaults or omission
             # Gemini Specifics
             generation_config=other_gen_config if other_gen_config else None,
             safety_settings=body.get("safetySettings"),
@@ -429,10 +500,9 @@ class RequestMapper:
             cached_content=body.get("cachedContent"),
             gemini_contents=parsed_contents,
             gemini_payload_fields=provided_gemini_fields,
-            
             # Visual Prompting
             input_image_bytes_list=img_bytes if img_bytes else None,
-            input_image_mime_list=img_mimes if img_mimes else None
+            input_image_mime_list=img_mimes if img_mimes else None,
         )
 
     @staticmethod
@@ -447,9 +517,11 @@ class RequestMapper:
         # Determine size: prefer explicit req.size, fallback to mapping from generation_config
         size = req.size
         if not size and req.generation_config:
-             img_conf = req.generation_config.get("imageConfig")
-             if img_conf and "aspectRatio" in img_conf:
-                 size = RequestMapper._map_gemini_ar_to_openai_size(img_conf["aspectRatio"])
+            img_conf = req.generation_config.get("imageConfig")
+            if img_conf and "aspectRatio" in img_conf:
+                size = RequestMapper._map_gemini_ar_to_openai_size(
+                    img_conf["aspectRatio"]
+                )
 
         optional_fields = {
             "n": req.n,
@@ -475,7 +547,7 @@ class RequestMapper:
         for field, value in optional_fields.items():
             if value is None:
                 continue
-            
+
             if RequestMapper._should_include_openai_field(req, field):
                 payload[field] = value
 
@@ -497,10 +569,14 @@ class RequestMapper:
                     if part.text is not None:
                         part_payload["text"] = part.text
                     if part.inline_data:
-                        data_b64 = base64.b64encode(part.inline_data.data).decode("utf-8") if part.inline_data.data else ""
+                        data_b64 = (
+                            base64.b64encode(part.inline_data.data).decode("utf-8")
+                            if part.inline_data.data
+                            else ""
+                        )
                         part_payload["inlineData"] = {
                             "mimeType": part.inline_data.mime_type,
-                            "data": data_b64
+                            "data": data_b64,
                         }
                     if part.thought is not None:
                         part_payload["thought"] = part.thought
@@ -536,53 +612,48 @@ class RequestMapper:
         else:
             # Fallback to reconstructing from prompt/images (e.g. from OpenAI request)
             parts: List[Dict[str, Any]] = [{"text": req.prompt}]
-            
+
             # Handle Edits (Visual Prompting)
             if req.input_image_bytes_list:
                 if req.mask_image_bytes:
-                     raise HTTPException(
-                        status_code=400, 
-                        detail="The 'mask' parameter is not supported for Gemini models via this endpoint."
+                    raise HTTPException(
+                        status_code=400,
+                        detail="The 'mask' parameter is not supported for Gemini models via this endpoint.",
                     )
 
                 mime_list = req.input_image_mime_list or []
                 for idx, img_bytes in enumerate(req.input_image_bytes_list):
                     b64_img = base64.b64encode(img_bytes).decode("utf-8")
                     mime_type = mime_list[idx] if idx < len(mime_list) else "image/png"
-                    parts.append({
-                        "inlineData": {
-                            "mimeType": mime_type,
-                            "data": b64_img
-                        }
-                    })
+                    parts.append(
+                        {"inlineData": {"mimeType": mime_type, "data": b64_img}}
+                    )
             contents = [{"role": "user", "parts": parts}]
 
         # 2. Construct Payload
-        payload: Dict[str, Any] = {
-            "contents": contents
-        }
+        payload: Dict[str, Any] = {"contents": contents}
 
         # Determine if we need to inject default multimodal settings (for OpenAI -> Gemini case)
-        is_openai_source = (req.gemini_contents is None)
+        is_openai_source = req.gemini_contents is None
 
         if RequestMapper._should_include_gemini_field(req, "generationConfig"):
-            generation_config_payload: Dict[str, Any] = {
-                "candidateCount": req.n
-            }
+            generation_config_payload: Dict[str, Any] = {"candidateCount": req.n}
             if size_for_gemini:
-                aspect_ratio, image_size = RequestMapper._derive_gemini_image_config_from_size(size_for_gemini)
+                aspect_ratio, image_size = (
+                    RequestMapper._derive_gemini_image_config_from_size(size_for_gemini)
+                )
                 generation_config_payload["imageConfig"] = {
                     "aspectRatio": aspect_ratio,
-                    "imageSize": image_size
+                    "imageSize": image_size,
                 }
-            
+
             if is_openai_source:
                 # Force TEXT + IMAGE for OpenAI requests to allow image generation
-                generation_config_payload["response_modalities"] = ["TEXT", "IMAGE"]
+                generation_config_payload["responseModalities"] = ["TEXT", "IMAGE"]
 
             if req.generation_config:
                 generation_config_payload.update(req.generation_config)
-            
+
             payload["generationConfig"] = generation_config_payload
 
         if req.safety_settings:
@@ -590,23 +661,44 @@ class RequestMapper:
         else:
             default_threshold = "OFF"
             payload["safetySettings"] = [
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": default_threshold},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": default_threshold},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": default_threshold},
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": default_threshold},
-                {"category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": default_threshold},
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": default_threshold,
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": default_threshold,
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": default_threshold,
+                },
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": default_threshold,
+                },
+                {
+                    "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+                    "threshold": default_threshold,
+                },
             ]
-            
+
         if req.tools and RequestMapper._should_include_gemini_field(req, "tools"):
             payload["tools"] = req.tools
-            
-        if req.tool_config and RequestMapper._should_include_gemini_field(req, "toolConfig"):
+
+        if req.tool_config and RequestMapper._should_include_gemini_field(
+            req, "toolConfig"
+        ):
             payload["toolConfig"] = req.tool_config
-            
-        if req.system_instruction and RequestMapper._should_include_gemini_field(req, "systemInstruction"):
+
+        if req.system_instruction and RequestMapper._should_include_gemini_field(
+            req, "systemInstruction"
+        ):
             payload["systemInstruction"] = req.system_instruction
-            
-        if req.cached_content and RequestMapper._should_include_gemini_field(req, "cachedContent"):
+
+        if req.cached_content and RequestMapper._should_include_gemini_field(
+            req, "cachedContent"
+        ):
             payload["cachedContent"] = req.cached_content
 
         return payload
@@ -621,7 +713,7 @@ class ResponseMapper:
             "png": "image/png",
             "jpeg": "image/jpeg",
             "jpg": "image/jpeg",
-            "webp": "image/webp"
+            "webp": "image/webp",
         }.get(fmt, "image/png")
 
     @staticmethod
@@ -667,7 +759,7 @@ class ResponseMapper:
         if dropped_fields:
             logger.warning(
                 "[OpenAI Response] Dropping Gemini-specific fields that have no OpenAI equivalent: %s",
-                ", ".join(sorted(dropped_fields))
+                ", ".join(sorted(dropped_fields)),
             )
 
     @staticmethod
@@ -683,19 +775,19 @@ class ResponseMapper:
         if dropped_fields:
             logger.warning(
                 "[Gemini Response] Ignoring OpenAI-specific fields while mapping to Gemini format: %s",
-                ", ".join(sorted(dropped_fields))
+                ", ".join(sorted(dropped_fields)),
             )
 
     @staticmethod
     def openai_to_unified(resp: Dict) -> UnifiedImageResponse:
-        # known_fields check is less relevant now that we capture everything else as metadata, 
+        # known_fields check is less relevant now that we capture everything else as metadata,
         # but we can still keep it for sanity or remove strict warning.
         # Let's rely on capturing everything into metadata for forward compatibility.
 
         images: List[UnifiedImageResponseItem] = []
         metadata = ResponseMapper._collect_openai_metadata(resp)
         mime_type = ResponseMapper._mime_from_openai_format(resp.get("output_format"))
-        
+
         for item in resp.get("data", []):
             extra_info = {}
             known_item_fields = {"b64_json", "url", "revised_prompt"}
@@ -704,20 +796,22 @@ class ResponseMapper:
                 if k not in known_item_fields:
                     extra_info[k] = v
 
-            images.append(UnifiedImageResponseItem(
-                b64_json=item.get("b64_json"),
-                url=item.get("url"),
-                mime_type=mime_type,
-                revised_prompt=item.get("revised_prompt"),
-                extra_info=extra_info if extra_info else None
-            ))
-        
+            images.append(
+                UnifiedImageResponseItem(
+                    b64_json=item.get("b64_json"),
+                    url=item.get("url"),
+                    mime_type=mime_type,
+                    revised_prompt=item.get("revised_prompt"),
+                    extra_info=extra_info if extra_info else None,
+                )
+            )
+
         return UnifiedImageResponse(
             images=images,
             created=resp.get("created", int(time.time())),
             usage=resp.get("usage"),
             usage_source="openai",
-            metadata=metadata or None
+            metadata=metadata or None,
         )
 
     @staticmethod
@@ -728,14 +822,26 @@ class ResponseMapper:
         images: List[UnifiedImageResponseItem] = []
         candidates = resp.get("candidates", [])
         for cand_idx, cand in enumerate(candidates):
-            known_cand_fields = {"content", "finishReason", "safetyRatings", "citationMetadata", 
-                                 "tokenCount", "groundingAttributions", "groundingMetadata", 
-                                 "avgLogprobs", "logprobsResult", "index", "finishMessage"}
-            RequestMapper._warn_unknown_fields(cand, known_cand_fields, "Gemini Candidate")
+            known_cand_fields = {
+                "content",
+                "finishReason",
+                "safetyRatings",
+                "citationMetadata",
+                "tokenCount",
+                "groundingAttributions",
+                "groundingMetadata",
+                "avgLogprobs",
+                "logprobsResult",
+                "index",
+                "finishMessage",
+            }
+            RequestMapper._warn_unknown_fields(
+                cand, known_cand_fields, "Gemini Candidate"
+            )
 
             finish_reason = cand.get("finishReason")
             safety_ratings = cand.get("safetyRatings")
-            
+
             # Extract specific Gemini candidate-level metadata
             citation_metadata = cand.get("citationMetadata")
             grounding_metadata = cand.get("groundingMetadata")
@@ -744,14 +850,14 @@ class ResponseMapper:
             index = cand.get("index")
             if index is None:
                 index = cand_idx
-            
+
             finish_message = cand.get("finishMessage")
 
             parts = cand.get("content", {}).get("parts", [])
-            
+
             for p in parts:
                 # For each part, create a separate UnifiedImageResponseItem
-                
+
                 image_data = None
                 mime_type = "image/png"
                 text_content = None
@@ -759,76 +865,95 @@ class ResponseMapper:
                 thought_sig = None
                 part_meta = None
                 video_meta = None
-                
+
                 # Advanced fields
                 func_call = None
                 func_resp = None
                 file_data = None
                 exe_code = None
                 code_res = None
-                
+
                 # Check Part Type
                 if "inlineData" in p:
                     image_data = p["inlineData"]["data"]
                     mime_type = p["inlineData"].get("mimeType", "image/png")
-                
+
                 if "text" in p:
                     text_content = p["text"]
-                
+
                 if "thought" in p:
                     thought_val = p["thought"]
-                
+
                 if "thoughtSignature" in p:
                     thought_sig = p["thoughtSignature"]
-                
+
                 if "partMetadata" in p:
                     part_meta = p["partMetadata"]
-                    
+
                 if "videoMetadata" in p:
                     video_meta = p["videoMetadata"]
-                
+
                 if "functionCall" in p:
                     func_call = p["functionCall"]
-                    
+
                 if "functionResponse" in p:
                     func_resp = p["functionResponse"]
-                    
+
                 if "fileData" in p:
                     file_data = p["fileData"]
-                    
+
                 if "executableCode" in p:
                     exe_code = p["executableCode"]
-                
+
                 if "codeExecutionResult" in p:
                     code_res = p["codeExecutionResult"]
-                
+
                 # Warn for other unknown part fields
-                known_part_fields = {"inlineData", "text", "thought", "thoughtSignature", "partMetadata", "videoMetadata", 
-                                     "functionCall", "functionResponse", "fileData", "executableCode", "codeExecutionResult"}
-                RequestMapper._warn_unknown_fields(p, known_part_fields, "Gemini Content Part")
+                known_part_fields = {
+                    "inlineData",
+                    "text",
+                    "thought",
+                    "thoughtSignature",
+                    "partMetadata",
+                    "videoMetadata",
+                    "functionCall",
+                    "functionResponse",
+                    "fileData",
+                    "executableCode",
+                    "codeExecutionResult",
+                }
+                RequestMapper._warn_unknown_fields(
+                    p, known_part_fields, "Gemini Content Part"
+                )
 
                 # Create Item
-                images.append(UnifiedImageResponseItem(
-                    b64_json=image_data, # Optional
-                    mime_type=mime_type,
-                    revised_prompt=text_content, # Using revised_prompt as "Text Content" carrier
-                    finish_reason=finish_reason,
-                    safety_ratings=safety_ratings,
-                    citation_metadata=citation_metadata,
-                    grounding_metadata=grounding_metadata,
-                    token_count=token_count,
-                    index=index,
-                    thought=thought_val,
-                    thought_signature=thought_sig,
-                    part_metadata=part_meta,
-                    video_metadata=video_meta,
-                    function_call=func_call,
-                    function_response=func_resp,
-                    file_data=file_data,
-                    executable_code=exe_code,
-                    code_execution_result=code_res,
-                    extra_info={"finishMessage": finish_message} if finish_message else None
-                ))
+                images.append(
+                    UnifiedImageResponseItem(
+                        b64_json=image_data,  # Optional
+                        mime_type=mime_type,
+                        revised_prompt=text_content,  # Using revised_prompt as "Text Content" carrier
+                        finish_reason=finish_reason,
+                        safety_ratings=safety_ratings,
+                        citation_metadata=citation_metadata,
+                        grounding_metadata=grounding_metadata,
+                        token_count=token_count,
+                        index=index,
+                        thought=thought_val,
+                        thought_signature=thought_sig,
+                        part_metadata=part_meta,
+                        video_metadata=video_meta,
+                        function_call=func_call,
+                        function_response=func_resp,
+                        file_data=file_data,
+                        executable_code=exe_code,
+                        code_execution_result=code_res,
+                        extra_info=(
+                            {"finishMessage": finish_message}
+                            if finish_message
+                            else None
+                        ),
+                    )
+                )
 
         return UnifiedImageResponse(
             images=images,
@@ -836,7 +961,7 @@ class ResponseMapper:
             usage=resp.get("usageMetadata"),
             usage_source="gemini",
             prompt_feedback=resp.get("promptFeedback"),
-            model_version=resp.get("modelVersion")
+            model_version=resp.get("modelVersion"),
         )
 
     @staticmethod
@@ -844,19 +969,21 @@ class ResponseMapper:
         ResponseMapper._warn_openai_response_loss(unified)
 
         # Group Unified Items by Candidate Index to form OpenAI Items
-        # This effectively merges multiple parts (text + image) from one Gemini candidate 
+        # This effectively merges multiple parts (text + image) from one Gemini candidate
         # into a single OpenAI object (revised_prompt + b64_json).
         grouped_items: Dict[int, Dict[str, Any]] = defaultdict(dict)
         first_valid_mime = None
-        
+
         # Track indices to preserve order or detect missing ones
         seen_indices: List[int] = []
 
         for img in unified.images:
-            idx = img.index if img.index is not None else len(seen_indices) # Fallback if no index
+            idx = (
+                img.index if img.index is not None else len(seen_indices)
+            )  # Fallback if no index
             if idx not in grouped_items:
                 seen_indices.append(idx)
-            
+
             item = grouped_items[idx]
 
             # Merge fields from this part into the item dict
@@ -870,59 +997,63 @@ class ResponseMapper:
                 item["url"] = img.url
 
             if img.revised_prompt:
-                 # If multiple text parts exist, we append/join them
-                 existing_prompt = item.get("revised_prompt", "")
-                 if existing_prompt:
-                     item["revised_prompt"] = existing_prompt + "\n" + img.revised_prompt
-                 else:
-                     item["revised_prompt"] = img.revised_prompt
-            
+                # If multiple text parts exist, we append/join them
+                existing_prompt = item.get("revised_prompt", "")
+                if existing_prompt:
+                    item["revised_prompt"] = existing_prompt + "\n" + img.revised_prompt
+                else:
+                    item["revised_prompt"] = img.revised_prompt
+
             # Re-attach extra info (last one wins or merge?) -> simple update for now
             if img.extra_info:
                 item.update(img.extra_info)
-        
+
         # Convert grouped map back to list
         data_items: List[Dict[str, Any]] = []
         for idx in seen_indices:
             item = grouped_items[idx]
             # Filter out items that don't have actual image data (e.g. purely safety blocks)
             if not item.get("b64_json") and not item.get("url"):
-                 continue
+                continue
             data_items.append(item)
-        
-        resp: Dict[str, Any] = {
-            "created": unified.created,
-            "data": data_items
-        }
+
+        resp: Dict[str, Any] = {"created": unified.created, "data": data_items}
 
         if unified.metadata:
             resp.update(unified.metadata)
-        
+
         # Try to populate output_format from derived mime type if not already in metadata
         if "output_format" not in resp and first_valid_mime:
             # simplified map
             if "png" in first_valid_mime:
                 resp["output_format"] = "png"
             elif "jpeg" in first_valid_mime or "jpg" in first_valid_mime:
-                 resp["output_format"] = "jpeg"
+                resp["output_format"] = "jpeg"
             elif "webp" in first_valid_mime:
-                 resp["output_format"] = "webp"
-        
+                resp["output_format"] = "webp"
+
         if unified.usage:
             if unified.usage_source == "gemini":
                 # Map Gemini usageMetadata to gpt-image-1 usage format
                 u = unified.usage
+                prompt_tokens = u.get("promptTokenCount", 0)
                 resp["usage"] = {
-                    "input_tokens": u.get("promptTokenCount", 0),
+                    "input_tokens": prompt_tokens,
                     "output_tokens": u.get("candidatesTokenCount", 0),
                     "total_tokens": u.get("totalTokenCount", 0),
                     # Standard OpenAI keys just in case clients expect them
-                    "prompt_tokens": u.get("promptTokenCount", 0),
+                    "prompt_tokens": prompt_tokens,
                     "completion_tokens": u.get("candidatesTokenCount", 0),
+                    # SDK expects a dict for input_tokens_details
+                    # Gemini doesn't break down prompt tokens into text/image, so we attribute all to text_tokens as a best effort.
+                    "input_tokens_details": {
+                        "text_tokens": prompt_tokens,
+                        "image_tokens": 0,
+                    },
                 }
             elif unified.usage_source == "openai":
-                 resp["usage"] = unified.usage
-        
+                resp["usage"] = unified.usage
+
         return resp
 
     @staticmethod
@@ -932,9 +1063,11 @@ class ResponseMapper:
         # Group items by index to reconstruct Candidates
         candidates_map: Dict[int, Dict[str, Any]] = {}
         parts_map: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
-        
+
         next_auto_index = 0
-        existing_indices = [img.index for img in unified.images if img.index is not None]
+        existing_indices = [
+            img.index for img in unified.images if img.index is not None
+        ]
         if existing_indices:
             next_auto_index = max(existing_indices) + 1
 
@@ -943,7 +1076,7 @@ class ResponseMapper:
             if idx is None:
                 idx = next_auto_index
                 next_auto_index += 1
-            
+
             # Initialize Candidate Structure if new index
             if idx not in candidates_map:
                 candidate: Dict[str, Any] = {}
@@ -959,15 +1092,15 @@ class ResponseMapper:
                     candidate["tokenCount"] = img.token_count
                 # Explicitly set index in candidate
                 candidate["index"] = idx
-                
+
                 if img.extra_info and "finishMessage" in img.extra_info:
                     candidate["finishMessage"] = img.extra_info["finishMessage"]
-                
+
                 candidates_map[idx] = candidate
 
             # Construct Part (Merge all properties into a single Part object)
             part: Dict[str, Any] = {}
-            
+
             # Text
             if img.revised_prompt:
                 part["text"] = img.revised_prompt
@@ -975,19 +1108,19 @@ class ResponseMapper:
             # Thought
             if img.thought is not None:
                 part["thought"] = img.thought
-            
+
             # Thought Signature
             if img.thought_signature:
                 part["thoughtSignature"] = img.thought_signature
-            
+
             # Part Metadata
             if img.part_metadata:
                 part["partMetadata"] = img.part_metadata
-            
+
             # Video Metadata
             if img.video_metadata:
                 part["videoMetadata"] = img.video_metadata
-                
+
             # Advanced Fields
             if img.function_call:
                 part["functionCall"] = img.function_call
@@ -1002,36 +1135,31 @@ class ResponseMapper:
 
             # Image
             if img.b64_json:
-                part["inlineData"] = {
-                    "mimeType": img.mime_type,
-                    "data": img.b64_json
-                }
-            
+                part["inlineData"] = {"mimeType": img.mime_type, "data": img.b64_json}
+
             if part:
                 parts_map[idx].append(part)
-        
+
         # Assemble final list
         final_candidates = []
         sorted_indices = sorted(candidates_map.keys())
-        
+
         for idx in sorted_indices:
             cand = candidates_map[idx]
             parts = parts_map[idx]
             if parts:
                 cand["content"] = {"parts": parts}
             final_candidates.append(cand)
-            
-        resp: Dict[str, Any] = {
-            "candidates": final_candidates
-        }
-        
+
+        resp: Dict[str, Any] = {"candidates": final_candidates}
+
         if unified.usage_source == "gemini" and unified.usage:
             resp["usageMetadata"] = unified.usage
-            
+
         if unified.prompt_feedback:
             resp["promptFeedback"] = unified.prompt_feedback
-            
+
         if unified.model_version:
             resp["modelVersion"] = unified.model_version
-        
+
         return resp
