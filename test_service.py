@@ -10,7 +10,7 @@ from google.genai import types
 LOCAL_API_URL = "http://localhost:8000"
 OPENAI_BASE_URL = f"{LOCAL_API_URL}/v1"
 GEMINI_BASE_URL = f"{LOCAL_API_URL}"
-CLIENT_API_KEY = os.getenv("CLIENT_API_KEY", "dummy-key")
+CLIENT_API_KEY = os.getenv("TRANSCALL_CLIENT_KEY", "dummy-key")
 
 # Models to test
 MODEL_OPENAI = "gpt-image-1"

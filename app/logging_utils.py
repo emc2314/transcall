@@ -123,10 +123,32 @@ def _serialize_headers(headers: Optional[Mapping[str, Any]]) -> str:
     return _truncate(json.dumps(header_dict, ensure_ascii=False))
 
 
+def _decode_binary_for_logging(data: bytes) -> str:
+    """
+    Decode binary preferring UTF-8 (with surrogateescape for invalid portions) so
+    human-readable text stays intact while non-text bytes are escaped.
+    """
+    text = data.decode("utf-8", errors="surrogateescape")
+
+    def _sanitize_char(ch: str) -> str:
+        code = ord(ch)
+        # surrogateescape encoded bytes fall into the surrogate range
+        if 0xDC80 <= code <= 0xDCFF:
+            byte_val = code - 0xDC00
+            return f"\\x{byte_val:02x}"
+        if ch in {"\n", "\r", "\t"}:
+            return ch
+        if ch.isprintable():
+            return ch
+        return f"\\x{ord(ch):02x}"
+
+    return "".join(_sanitize_char(ch) for ch in text)
+
+
 def format_binary_content(data: bytes) -> str:
     mode = _binary_mode()
     if mode == "raw":
-        text = data.decode("latin-1", errors="replace")
+        text = _decode_binary_for_logging(data)
         return _truncate(text)
     if mode == "base64":
         b64 = base64.b64encode(data).decode("ascii")
