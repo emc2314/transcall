@@ -23,10 +23,21 @@ def _truncate(text: str) -> str:
 def _serialize_headers(headers: Optional[Mapping[str, Any]]) -> str:
     if headers is None:
         return ""
+    
+    sensitive_keys = {"authorization", "api-key", "x-api-key", "cookie", "token"}
+    
     try:
-        header_dict = {k: str(v) for k, v in headers.items()}
+        header_dict = {}
+        for k, v in headers.items():
+            key_lower = str(k).lower()
+            if key_lower in sensitive_keys:
+                header_dict[k] = "***REDACTED***"
+            else:
+                header_dict[k] = str(v)
     except Exception:
-        header_dict = dict(headers)
+        # Fallback if iteration fails, though unlikely with Mapping
+        header_dict = {"error": "Failed to serialize headers"}
+        
     return _truncate(json.dumps(header_dict, ensure_ascii=False))
 
 

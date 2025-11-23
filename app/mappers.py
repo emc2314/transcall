@@ -386,23 +386,19 @@ class RequestMapper:
                                    "temperature", "topP", "topK", "seed", "responseMimeType", "responseSchema",
                                    "responseLogprobs", "logprobs"}
         
-        other_gen_config = {k: v for k, v in gen_config.items() if k not in {"candidateCount", "imageConfig"}}
+        # Keep imageConfig in generation_config. Only strip candidateCount as it maps to 'n'.
+        other_gen_config = {k: v for k, v in gen_config.items() if k not in {"candidateCount"}}
         RequestMapper._warn_unknown_fields(gen_config, known_gen_config_fields, "Gemini Generation Config")
 
-        if provider == "gemini":
-            normalized_size = RequestMapper._map_gemini_ar_to_openai_size(aspect_ratio)
-            target_model = model_name
-        else:
-            # If mapped to OpenAI
-            normalized_size = RequestMapper._map_gemini_ar_to_openai_size(aspect_ratio)
-            target_model = "gpt-image-1"
-
+        # Always use the requested model name as the target so Service can look up the right config
+        target_model = model_name
+        
         return UnifiedImageRequest(
             target_model=target_model,
             provider=provider,
             prompt=prompt,
             n=n,
-            size=normalized_size,
+            size=None, # No WxH size yet, preserved in generation_config
             response_format="b64_json",
             
             # Gemini Specifics
@@ -429,9 +425,16 @@ class RequestMapper:
             "prompt": req.prompt,
         }
 
+        # Determine size: prefer explicit req.size, fallback to mapping from generation_config
+        size = req.size
+        if not size and req.generation_config:
+             img_conf = req.generation_config.get("imageConfig")
+             if img_conf and "aspectRatio" in img_conf:
+                 size = RequestMapper._map_gemini_ar_to_openai_size(img_conf["aspectRatio"])
+
         optional_fields = {
             "n": req.n,
-            "size": req.size,
+            "size": size,
             "response_format": req.response_format,
             "style": req.style,
             "background": req.background,

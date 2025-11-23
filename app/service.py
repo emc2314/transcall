@@ -100,14 +100,19 @@ class ImageGenerationService:
             
             logger.info(f"Calling OpenAI Edits: {url}")
             timeout = httpx.Timeout(config.get("timeout_seconds", 120))
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    url,
-                    headers=headers,
-                    params=params,
-                    data=data,
-                    files=files_list_for_httpx,
-                )
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(
+                        url,
+                        headers=headers,
+                        params=params,
+                        data=data,
+                        files=files_list_for_httpx,
+                    )
+            except httpx.TimeoutException:
+                raise HTTPException(status_code=504, detail="Upstream service timed out")
+            except httpx.RequestError as e:
+                raise HTTPException(status_code=502, detail=f"Upstream connection error: {str(e)}")
 
         else:
             # Generations Endpoint
@@ -126,13 +131,18 @@ class ImageGenerationService:
             
             logger.info(f"Calling OpenAI Generations: {url}")
             timeout = httpx.Timeout(config.get("timeout_seconds", 120))
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    url,
-                    headers=headers,
-                    params=params,
-                    json=payload,
-                )
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(
+                        url,
+                        headers=headers,
+                        params=params,
+                        json=payload,
+                    )
+            except httpx.TimeoutException:
+                raise HTTPException(status_code=504, detail="Upstream service timed out")
+            except httpx.RequestError as e:
+                raise HTTPException(status_code=502, detail=f"Upstream connection error: {str(e)}")
         
         log_debug_payload(
             logger,
@@ -167,8 +177,13 @@ class ImageGenerationService:
         
         logger.info(f"Calling Gemini: {url}")
         timeout = httpx.Timeout(config.get("timeout_seconds", 120))
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, params=params_qs, json=payload, headers=headers)
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(url, params=params_qs, json=payload, headers=headers)
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Upstream service timed out")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"Upstream connection error: {str(e)}")
             
         log_debug_payload(
             logger,
