@@ -96,10 +96,8 @@ def run_google_genai_sdk_tests(target_model: str):
         vertexai=True,
         http_options={
             "base_url": GEMINI_BASE_URL,
-            "headers": {
-                "Authorization": f"Bearer {CLIENT_API_KEY}",
-            },
         },
+        api_key=CLIENT_API_KEY,
     )
 
     # 1. Generate
