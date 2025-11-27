@@ -1,0 +1,33 @@
+{
+  "candidates": [
+    {
+      "index": 0,
+      "finishReason": "STOP",
+      "content": {
+        "parts": [
+          {
+            "inlineData": {
+              "mimeType": "image/png",
+              "data": "Z2VtaW5pLWltYWdlLW91dA=="
+            }
+          },
+          {
+            "text": "Rendered a watercolor fox under warm light"
+          }
+        ]
+      },
+      "safetyRatings": [
+        {
+          "category": "HARM_CATEGORY_HATE_SPEECH",
+          "probability": "NEGLIGIBLE"
+        }
+      ]
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 256,
+    "candidatesTokenCount": 128,
+    "totalTokenCount": 384
+  },
+  "modelVersion": "gemini-3-pro-image-preview"
+}

@@ -1,0 +1,37 @@
+{
+  "contents": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "text": "A watercolor of a fox reading a book under a lamp"
+        },
+        {
+          "inlineData": {
+            "mimeType": "image/png",
+            "data": "YmFzZTY0LWlucHV0"
+          }
+        }
+      ]
+    }
+  ],
+  "generationConfig": {
+    "candidateCount": 2,
+    "imageConfig": {
+      "aspectRatio": "1:1",
+      "imageSize": "1K"
+    },
+    "responseModalities": [
+      "TEXT",
+      "IMAGE"
+    ],
+    "temperature": 0.7,
+    "maxOutputTokens": 1024
+  },
+  "safetySettings": [
+    {
+      "category": "HARM_CATEGORY_HATE_SPEECH",
+      "threshold": "OFF"
+    }
+  ]
+}

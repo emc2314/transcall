@@ -1,0 +1,17 @@
+{
+  "created": 1234567890,
+  "data": [
+    {
+      "b64_json": "ZGF0YS1pbWFnZS1iYXNlNjQ=",
+      "revised_prompt": "A red panda astronaut floating past Jupiter",
+      "some_extra": "value"
+    }
+  ],
+  "output_format": "png",
+  "usage": {
+    "input_tokens": 64,
+    "output_tokens": 32,
+    "total_tokens": 96
+  },
+  "metadata_field": "retained"
+}

@@ -3,8 +3,13 @@ uvicorn
 httpx
 python-multipart
 pydantic
+pydantic-settings
 google-auth
 requests
 openai
 google-genai
 pillow
+pytest
+pytest-asyncio
+syrupy
+respx

@@ -1,31 +1,44 @@
 from typing import List, Optional, Literal, Any, Dict, Set
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, computed_field
 
 # --- Unified Internal Representation ---
 
-
-class GeminiInlineData(BaseModel):
-    mime_type: str = "application/octet-stream"
-    data: bytes
+ProviderName = Literal["openai", "gemini", "vertexai"]
 
 
-class GeminiContentPart(BaseModel):
+class UnifiedContentPart(BaseModel):
+    """
+    A neutral representation of a part of a message.
+    Can represent text, images, tool calls, etc.
+    """
     text: Optional[str] = None
-    inline_data: Optional[GeminiInlineData] = None
+    
+    # Image Data (Raw bytes, decoded from base64 or read from file)
+    image_data: Optional[bytes] = None
+    image_mime_type: Optional[str] = "image/png"
+    
+    # Advanced Interaction Fields (Tooling, Thoughts, etc.)
     thought: Optional[Any] = None
     thought_signature: Optional[str] = None
-    part_metadata: Optional[Dict[str, Any]] = None
-    video_metadata: Optional[Dict[str, Any]] = None
+    
     function_call: Optional[Dict[str, Any]] = None
     function_response: Optional[Dict[str, Any]] = None
-    file_data: Optional[Dict[str, Any]] = None
+    
+    file_data: Optional[Dict[str, Any]] = None 
+    video_metadata: Optional[Dict[str, Any]] = None
+    
     executable_code: Optional[Dict[str, Any]] = None
     code_execution_result: Optional[Dict[str, Any]] = None
+    
+    part_metadata: Optional[Dict[str, Any]] = None
 
 
-class GeminiContent(BaseModel):
-    role: Optional[str] = None
-    parts: List[GeminiContentPart]
+class UnifiedMessage(BaseModel):
+    """
+    A single message in a conversation history.
+    """
+    role: str = "user" 
+    parts: List[UnifiedContentPart] = Field(default_factory=list)
 
 
 class UnifiedImageRequest(BaseModel):
@@ -35,75 +48,85 @@ class UnifiedImageRequest(BaseModel):
     """
 
     # Routing / Meta
-    target_model: str  # The actual model name to use (e.g., "gpt-image-1")
-    provider: str  # "openai" or "gemini"
+    target_model: str
+    provider: ProviderName
 
-    # Core Parameters (OpenAI & Gemini Intersection)
-    prompt: str
+    # Core Content
+    messages: List[UnifiedMessage] = Field(default_factory=list)
+
+    # Generation Parameters
     n: int = 1
-    size: Optional[str] = None  # Preserve raw client preference (e.g., auto)
+    size: Optional[str] = None 
     response_format: Optional[Literal["url", "b64_json"]] = None
 
     # OpenAI Specifics
-    style: Optional[Literal["vivid", "natural"]] = None  # DALL-E 3
+    style: Optional[Literal["vivid", "natural"]] = None
     background: Optional[Literal["transparent", "opaque", "auto"]] = None
     moderation: Optional[Literal["low", "auto"]] = None
     quality: Optional[Literal["high", "medium", "low", "standard", "hd"]] = None
     output_format: Optional[Literal["png", "jpeg", "webp"]] = None
-    output_compression: Optional[int] = None  # 0-100
-    partial_images: Optional[int] = None  # 0-3
+    output_compression: Optional[int] = None
+    partial_images: Optional[int] = None
     stream: Optional[bool] = None
     user: Optional[str] = None
-    input_fidelity: Optional[Literal["high", "low"]] = None  # For edits
+    input_fidelity: Optional[Literal["high", "low"]] = None
 
-    # Gemini Specifics (and Advanced Generation Params)
-    # Captures temperature, topP, etc.
+    # Gemini Specifics
     generation_config: Optional[Dict[str, Any]] = None
     safety_settings: Optional[List[Dict[str, Any]]] = None
     tools: Optional[List[Dict[str, Any]]] = None
     tool_config: Optional[Dict[str, Any]] = None
     system_instruction: Optional[Dict[str, Any]] = None
     cached_content: Optional[str] = None
-    gemini_contents: Optional[List[GeminiContent]] = None
+    
     openai_payload_fields: Optional[Set[str]] = None
     gemini_payload_fields: Optional[Set[str]] = None
 
-    # Input Data (Edits / Visual Prompting)
-    input_image_bytes_list: Optional[List[bytes]] = None
-    input_image_mime_list: Optional[List[str]] = None
-    input_image_field_names: Optional[List[str]] = None
     mask_image_bytes: Optional[bytes] = None
     mask_image_mime: Optional[str] = None
+
+    @computed_field
+    def prompt(self) -> str:
+        """
+        Compatibility property: Flattens all text parts from all messages
+        into a single prompt string.
+        """
+        fragments = []
+        for msg in self.messages:
+            for part in msg.parts:
+                if part.text:
+                    fragments.append(part.text)
+        return " ".join(fragments).strip()
 
 
 class UnifiedImageResponseItem(BaseModel):
     b64_json: Optional[str] = None
-    url: Optional[str] = None  # For when we support URL
+    url: Optional[str] = None
     mime_type: str = "image/png"
     revised_prompt: Optional[str] = None
     finish_reason: Optional[str] = None
     safety_ratings: Optional[List[Dict[str, Any]]] = None
 
-    # Detailed Gemini Metadata
+    # Detailed Metadata
     citation_metadata: Optional[Dict[str, Any]] = None
     grounding_metadata: Optional[Dict[str, Any]] = None
     token_count: Optional[int] = None
     index: Optional[int] = None
 
-    # Gemini Part specific fields (if present in an image part)
-    thought: Optional[Any] = None  # Can be bool, text, or structured dict
+    # Part specific fields
+    thought: Optional[Any] = None
     thought_signature: Optional[str] = None
     part_metadata: Optional[Dict[str, Any]] = None
     video_metadata: Optional[Dict[str, Any]] = None
 
-    # Advanced Gemini Part Types
+    # Advanced Part Types
     function_call: Optional[Dict[str, Any]] = None
     function_response: Optional[Dict[str, Any]] = None
     file_data: Optional[Dict[str, Any]] = None
     executable_code: Optional[Dict[str, Any]] = None
     code_execution_result: Optional[Dict[str, Any]] = None
 
-    # Catch-all for non-standard fields to avoid data loss without full raw dump
+    # Catch-all
     extra_info: Optional[Dict[str, Any]] = None
 
 
@@ -111,15 +134,10 @@ class UnifiedImageResponse(BaseModel):
     """
     The canonical representation of the result.
     """
-
     images: List[UnifiedImageResponseItem]
     created: int
     usage: Optional[Dict[str, Any]] = None
     usage_source: Optional[Literal["openai", "gemini"]] = None
-
-    # Request-level metadata (e.g. prompt feedback)
     prompt_feedback: Optional[Dict[str, Any]] = None
     model_version: Optional[str] = None
-
-    # Flattened metadata from OpenAI (e.g. strict params reflected back)
     metadata: Optional[Dict[str, Any]] = None

@@ -1,81 +1,95 @@
 import json
 import logging
 import os
-from typing import Dict, Optional, Any
+from pathlib import Path
+from typing import Dict, Optional
 
-CONFIG_FILE = "config.json"
-logger = logging.getLogger("ImageService")
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+CONFIG_FILE = Path(os.getenv("TRANSCALL_CONFIG_PATH", "config.json"))
+logger = logging.getLogger("Config")
+
+
+class ModelConfig(BaseModel):
+    provider: str
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    api_key_env: Optional[str] = None
+    deployment: Optional[str] = None
+    api_version: Optional[str] = None
+    model: Optional[str] = None
+    timeout_seconds: Optional[int] = 120
+    credentials_env: Optional[str] = None
+    credentials_json: Optional[str] = None
+    project_id: Optional[str] = None
+    location: Optional[str] = None
+    api_endpoint: Optional[str] = None
+
+    model_config = SettingsConfigDict(extra="allow")
+
+
+class ServiceSettings(BaseSettings):
+    client_api_key: Optional[str] = None
+    client_api_key_env: Optional[str] = None
+    models: Dict[str, ModelConfig] = Field(default_factory=dict)
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="TRANSCALL_",
+        env_nested_delimiter="__",
+        extra="allow",
+    )
+
+    @classmethod
+    def load_from_file(cls, path: Path = CONFIG_FILE) -> "ServiceSettings":
+        data: Dict = {}
+        try:
+            if path.exists():
+                with path.open("r", encoding="utf-8") as fp:
+                    data = json.load(fp)
+            else:
+                logger.warning(
+                    "Config file %s not found; defaulting to empty config", path
+                )
+        except Exception as exc:
+            logger.error("Failed to load config file %s: %s", path, exc)
+        return cls(**data)
 
 
 class ConfigManager:
-    _instance = None
-    _config: Dict[str, Any] = {}
-    _client_api_key: Optional[str] = None
+    def __init__(self, settings: Optional[ServiceSettings] = None):
+        self.settings = settings or ServiceSettings.load_from_file()
 
     @classmethod
-    def load(cls):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                cls._config = json.load(f)
-                api_key_value = cls._config.get("client_api_key")
-                api_key_env = cls._config.get("client_api_key_env")
-                resolved_key = None
-                if isinstance(api_key_value, (str, int, float)):
-                    resolved_key = str(api_key_value).strip()
-                if api_key_env:
-                    env_val = os.environ.get(str(api_key_env))
-                    if env_val:
-                        resolved_key = env_val.strip()
-                cls._client_api_key = resolved_key or None
-        except Exception as e:
-            logger.error(f"Failed to load config: {e}")
-            cls._config = {"models": {}}
-            cls._client_api_key = None
+    def load(cls, path: Path = CONFIG_FILE) -> "ConfigManager":
+        settings = ServiceSettings.load_from_file(path)
+        return cls(settings)
 
-    @classmethod
-    def get_model_config(cls, model_name: str) -> Optional[Dict]:
-        if not cls._config:
-            cls.load()
-
-        model_conf = cls._config.get("models", {}).get(model_name)
-        if not model_conf:
+    def get_model_config(self, model_name: str) -> Optional[Dict]:
+        model = self.settings.models.get(model_name)
+        if not model:
             return None
 
-        # Resolve API Key from environment variable
-        # We create a shallow copy to avoid mutating the cached config permanently with the resolved key
-        # (though mutating it might be fine, but clean separation is safer)
-        resolved_conf = model_conf.copy()
-        env_var_name = resolved_conf.get("api_key_env")
-        if env_var_name:
-            api_key = os.environ.get(env_var_name)
-            if not api_key:
-                logger.warning(
-                    f"Environment variable '{env_var_name}' not found for model '{model_name}'"
-                )
-            resolved_conf["api_key"] = api_key
-        else:
-            # Fallback: if 'api_key' was directly in json (legacy support), keep it.
-            # If neither exists, api_key will be None or whatever was in json.
-            pass
+        resolved = model.model_copy(deep=True)
 
-        # Resolve Credentials JSON from environment variable (for Vertex AI)
-        cred_env_name = resolved_conf.get("credentials_env")
-        if cred_env_name:
-            creds = os.environ.get(cred_env_name)
-            if not creds:
-                logger.warning(
-                    f"Environment variable '{cred_env_name}' not found for model '{model_name}'"
-                )
-            resolved_conf["credentials_json"] = creds
+        if resolved.api_key_env:
+            env_val = os.getenv(resolved.api_key_env)
+            if env_val:
+                resolved.api_key = env_val.strip()
 
-        return resolved_conf
+        if resolved.credentials_env:
+            creds_val = os.getenv(resolved.credentials_env)
+            if creds_val:
+                resolved.credentials_json = creds_val
 
-    @classmethod
-    def get_client_api_key(cls) -> Optional[str]:
-        if not cls._config:
-            cls.load()
-        return cls._client_api_key
+        return resolved.model_dump()
 
+    def get_client_api_key(self) -> Optional[str]:
+        key = self.settings.client_api_key
+        if self.settings.client_api_key_env:
+            env_val = os.getenv(self.settings.client_api_key_env)
+            if env_val:
+                key = env_val
 
-# Initialize on module import
-ConfigManager.load()
+        return key.strip() if isinstance(key, str) and key.strip() else None

@@ -5,7 +5,9 @@ from typing import List, Optional, Any, Dict, Tuple, Set
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import JSONResponse, Response
 
+from app import exceptions as exc
 from app.config import ConfigManager
+from app.error_handlers import transcall_exception_handler
 from app.schemas import UnifiedImageRequest
 from app.mappers import RequestMapper, ResponseMapper
 from app.service import ImageGenerationService
@@ -23,7 +25,7 @@ def _extract_bearer_token(header_value: Optional[str]) -> Optional[str]:
 
 
 async def verify_api_key(request: Request):
-    expected = ConfigManager.get_client_api_key()
+    expected = config_manager.get_client_api_key()
     if not expected:
         return
 
@@ -89,7 +91,16 @@ def _configure_logging() -> logging.Logger:
 
 logger = _configure_logging()
 
+config_manager = ConfigManager.load()
+image_service = ImageGenerationService(config_manager)
+
+
+def get_image_service() -> ImageGenerationService:
+    return image_service
+
+
 app = FastAPI()
+app.add_exception_handler(exc.TranscallError, transcall_exception_handler)
 
 
 @app.middleware("http")
@@ -176,7 +187,11 @@ def _enforce_non_streaming(
 
 @app.post("/images/generations")
 @app.post("/v1/images/generations")
-async def openai_generations(request: Request, _: None = Depends(verify_api_key)):
+async def openai_generations(
+    request: Request,
+    _: None = Depends(verify_api_key),
+    service: ImageGenerationService = Depends(get_image_service),
+):
     try:
         body = await request.json()
     except Exception:
@@ -190,7 +205,7 @@ async def openai_generations(request: Request, _: None = Depends(verify_api_key)
     requested_model = body.get("model", "gpt-image-1")
 
     # 2. Check Config to see who provides this model
-    config = ConfigManager.get_model_config(requested_model)
+    config = config_manager.get_model_config(requested_model)
     if not config:
         raise HTTPException(
             status_code=400, detail=f"Model '{requested_model}' not supported."
@@ -202,7 +217,7 @@ async def openai_generations(request: Request, _: None = Depends(verify_api_key)
     )
 
     # 4. Process
-    unified_resp = await ImageGenerationService.process_request(unified_req)
+    unified_resp = await service.process_request(unified_req)
 
     # 5. Map back to OpenAI format (since this is the OpenAI endpoint)
     final_resp = ResponseMapper.unified_to_openai_format(unified_resp)
@@ -214,6 +229,7 @@ async def openai_generations(request: Request, _: None = Depends(verify_api_key)
 @app.post("/v1/images/edits")
 async def openai_edits(
     _: None = Depends(verify_api_key),
+    service: ImageGenerationService = Depends(get_image_service),
     model: str = Form(...),
     prompt: str = Form(...),
     image_primary: List[UploadFile] = File(default_factory=list, alias="image"),
@@ -272,7 +288,7 @@ async def openai_edits(
 
     _enforce_non_streaming(stream, partial_images)
 
-    config = ConfigManager.get_model_config(model)
+    config = config_manager.get_model_config(model)
     if not config:
         raise HTTPException(status_code=400, detail=f"Model '{model}' not supported.")
 
@@ -321,7 +337,7 @@ async def openai_edits(
     )
 
     # Process
-    unified_resp = await ImageGenerationService.process_request(unified_req)
+    unified_resp = await service.process_request(unified_req)
 
     # Map Output
     final_resp = ResponseMapper.unified_to_openai_format(unified_resp)
@@ -346,6 +362,7 @@ async def gemini_generate_content(
     project: Optional[str] = None,
     location: Optional[str] = None,
     _: None = Depends(verify_api_key),
+    service: ImageGenerationService = Depends(get_image_service),
 ):
     try:
         body = await request.json()
@@ -355,7 +372,7 @@ async def gemini_generate_content(
     logger.info("Params (Gemini): %s", format_structured(body))
 
     # Config Check
-    config = ConfigManager.get_model_config(model_name)
+    config = config_manager.get_model_config(model_name)
     if not config:
         raise HTTPException(
             status_code=400, detail=f"Model '{model_name}' not supported."
@@ -371,7 +388,7 @@ async def gemini_generate_content(
         unified_req.target_model = model_name
 
     # Process
-    unified_resp = await ImageGenerationService.process_request(unified_req)
+    unified_resp = await service.process_request(unified_req)
 
     # Map Output to Gemini Format
     final_resp = ResponseMapper.unified_to_gemini_format(unified_resp)
